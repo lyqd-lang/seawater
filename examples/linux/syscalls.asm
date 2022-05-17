@@ -13,6 +13,13 @@ putc:
     syscall
     ret
 
+global exit
+putc:
+    mov rdi, [rsp + 8]
+    mov rax, 60
+    syscall
+    ret
+
 global puts ; TODO: Fix this function, not exactly sure where it's going wrong tho
 puts:
     push rbp
