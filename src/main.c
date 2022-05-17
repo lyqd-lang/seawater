@@ -102,9 +102,6 @@ int main(int argc, char** argv) {
     system(cmd);
     remove("lqdtmp.asm");
     remove("lqdtmp.o");
-    free(new_code);
-    free(code);
-    free(object_files);
     if (produce_binary) {
         char* obj = malloc(256);
         sprintf(obj, "%s.o", output_file);
@@ -117,7 +114,10 @@ int main(int argc, char** argv) {
         remove(obj);
         free(obj);
     }
+    free(object_files);
     free(cmd);
+    free(new_code);
+    free(code);
     if (!keep_asm)
         remove("lqdtmp.asm");
     lqdTokenArray_delete(tokens);
