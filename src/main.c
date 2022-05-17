@@ -96,10 +96,6 @@ int main(int argc, char** argv) {
     fclose(file);
     char* cmd = malloc(1024);
     sprintf(cmd, "nasm -o %s.o lqdtmp.asm -felf64", output_file);
-    for (int i = 0; i < object_values; i++) {
-        strcat(cmd, " ");
-        strcat(cmd, object_files[i]);
-    }
     system(cmd);
     remove("lqdtmp.asm");
     remove("lqdtmp.o");
@@ -111,6 +107,10 @@ int main(int argc, char** argv) {
         char* obj = malloc(256);
         sprintf(obj, "%s.o", output_file);
         sprintf(cmd, "ld %s.o -o %s", output_file, output_file);
+        for (int i = 0; i < object_values; i++) {
+            strcat(cmd, " ");
+            strcat(cmd, object_files[i]);
+        }
         system(cmd);
         remove(obj);
     }
