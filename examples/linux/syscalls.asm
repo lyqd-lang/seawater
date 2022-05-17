@@ -14,7 +14,7 @@ putc:
     ret
 
 global exit
-putc:
+exit:
     mov rdi, [rsp + 8]
     mov rax, 60
     syscall
