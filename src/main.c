@@ -9,6 +9,7 @@
 char* output_file = "\0";
 char keep_asm = 0;
 char produce_binary = 0;
+char* source_file = "\0";
 
 char** object_files;
 int object_values = 0;
@@ -51,6 +52,8 @@ void filter_args(int argc, char** argv) {
             append_object(argv[++i]);
         } else if (!strcmp(argv[i], "-pb")) {
             produce_binary = 1;
+        } else {
+            source_file = argv[i];
         }
     }
 }
@@ -65,7 +68,7 @@ int main(int argc, char** argv) {
     char* code = malloc(2);
     uint64_t code_len = 0;
     uint64_t code_max = 2;
-    FILE* file = fopen(argv[1], "r");
+    FILE* file = fopen(source_file, "r");
     if (file == NULL) {
         fprintf(stderr, "Invalid file passed!\n");
         exit(1);
@@ -86,11 +89,11 @@ int main(int argc, char** argv) {
     code = realloc(code, code_max + 1);
     code[--code_len] = 0;
     fclose(file);
-    lqdTokenArray* tokens = tokenize(code, argv[1]);
-    lqdStatementsNode* AST = parse(tokens, code, argv[1]);
+    lqdTokenArray* tokens = tokenize(code, source_file);
+    lqdStatementsNode* AST = parse(tokens, code, source_file);
     if (*output_file == 0)
         output_file = "clqd_bin"; // cause we just that cool
-    char* new_code = linux_x86_64_compile(AST, code, argv[1]);
+    char* new_code = linux_x86_64_compile(AST, code, source_file);
     file = fopen("lqdtmp.asm", "w");
     fputs(new_code, file);
     fclose(file);
@@ -102,7 +105,6 @@ int main(int argc, char** argv) {
     free(new_code);
     free(code);
     free(object_files);
-    free(cmd);
     if (produce_binary) {
         char* obj = malloc(256);
         sprintf(obj, "%s.o", output_file);
@@ -113,7 +115,9 @@ int main(int argc, char** argv) {
         }
         system(cmd);
         remove(obj);
+        free(obj);
     }
+    free(cmd);
     if (!keep_asm)
         remove("lqdtmp.asm");
     lqdTokenArray_delete(tokens);
