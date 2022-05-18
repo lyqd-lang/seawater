@@ -1,0 +1,11 @@
+// Testing file, not really an example
+extern putc(chr char);
+
+fn main() {
+    arr string = "Hello, world!\n";
+    num i = 0;
+    while i < 14 {
+        putc(string[i]);
+        i = i + 1;
+    }
+}

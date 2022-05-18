@@ -223,28 +223,13 @@ lqdTokenArray* tokenize(char* code, char* filename) {
                             }
                             switch (code[idx]) {
                                 case 'n':
-                                    value[value_ptr++] = '\"';
-                                    value[value_ptr++] = ',';
-                                    value[value_ptr++] = '1';
-                                    value[value_ptr++] = '0';
-                                    value[value_ptr++] = ',';
-                                    value[value_ptr++] = '\"';
+                                    value[value_ptr++] = 10;
                                     break;
                                 case 't':
-                                    value[value_ptr++] = '\"';
-                                    value[value_ptr++] = ',';
-                                    value[value_ptr++] = '9';
-                                    value[value_ptr++] = ' ';
-                                    value[value_ptr++] = ',';
-                                    value[value_ptr++] = '\"';
+                                    value[value_ptr++] = 9;
                                     break;
                                 case '0':
-                                    value[value_ptr++] = '\"';
-                                    value[value_ptr++] = ',';
-                                    value[value_ptr++] = '0';
-                                    value[value_ptr++] = ' ';
-                                    value[value_ptr++] = ',';
-                                    value[value_ptr++] = '\"';
+                                    value[value_ptr++] = 0;
                                     break;
                                 default:
                                     value[value_ptr++] = code[idx];

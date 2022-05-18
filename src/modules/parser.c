@@ -497,8 +497,28 @@ lqdASTNode factor(lqdParserCtx* ctx) {
         advance(ctx);
         lqdASTNode node = {NT_Char, var};
         return node;
+    } else if (ctx -> tok.type == TT_LBRACKET) {
+        advance(ctx);
+        if (ctx -> tok.type == TT_RBRACKET) {
+            lqdArrayNode* arr = malloc(sizeof(lqdArrayNode));
+            arr -> values = lqdStatementsNode_new(1);
+            lqdASTNode node = {NT_Arr, arr};
+            return node;
+        }
+        lqdStatementsNode* values = lqdStatementsNode_new(1);
+        do {
+            if (ctx -> tok.type == TT_COMMA)advance(ctx);
+            lqdStatementsNode_push(values, expr(ctx));
+        } while (ctx -> tok.type == TT_COMMA);
+        if (ctx -> tok.type != TT_RBRACKET)
+            lqdSyntaxError(ctx, "Expected ']'");
+        advance(ctx);
+        lqdArrayNode* arr = malloc(sizeof(lqdArrayNode));
+        arr -> values = values;
+        lqdASTNode node = {NT_Arr, arr};
+        return node;
     }
-    lqdSyntaxError(ctx, "Expected int, float, '-', '(', or identifier!");
+    lqdSyntaxError(ctx, "Expected int, float, '-', '(', '[', or identifier!");
     return null_node;
 }
 

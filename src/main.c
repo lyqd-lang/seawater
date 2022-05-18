@@ -100,7 +100,6 @@ int main(int argc, char** argv) {
     char* cmd = malloc(1024);
     sprintf(cmd, "nasm -o %s.o lqdtmp.asm -felf64", output_file);
     system(cmd);
-    remove("lqdtmp.asm");
     remove("lqdtmp.o");
     if (produce_binary) {
         char* obj = malloc(256);

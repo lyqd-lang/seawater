@@ -8,7 +8,7 @@
 
 typedef struct {
     char** defined_funcs;
-    int* func_params;
+    lqdParameterArray** func_params;
     int defined_funcs_vals;
     int defined_funcs_size;
     
@@ -26,7 +26,7 @@ typedef struct {
     char* section_bss;
     char* section_data;
 
-    uint64_t defined_strings;
+    uint64_t defined_arrays;
 
     void* parent_ctx;
     char is_child_ctx;
@@ -40,7 +40,7 @@ lqdCompilerContext* create_context(char* code, char* filename, char is_child, ui
     ctx -> code = code;
     ctx -> filename = filename;
     ctx -> defined_funcs = malloc(4 * sizeof(char*));
-    ctx -> func_params = malloc(4 * sizeof(int));
+    ctx -> func_params = malloc(4 * sizeof(lqdParameterArray*));
     ctx -> defined_funcs_size = 4;
     ctx -> defined_funcs_vals = 0;
 
@@ -56,7 +56,7 @@ lqdCompilerContext* create_context(char* code, char* filename, char is_child, ui
     ctx -> section_bss[0] = 0;
     ctx -> section_data = malloc(1);
     ctx -> section_data[0] = 0;
-    ctx -> defined_strings = 0;
+    ctx -> defined_arrays = 0;
 
     ctx -> is_child_ctx = is_child;
 
@@ -110,7 +110,7 @@ void lqdCompilerError(lqdCompilerContext* ctx, uint64_t line, int idx_start, int
     exit(1);
 }
 
-void define_func(lqdCompilerContext* ctx, char* name, int params) {
+void define_func(lqdCompilerContext* ctx, char* name, lqdParameterArray* params) {
     if (ctx -> defined_funcs_vals == ctx -> defined_funcs_size) {
         ctx -> defined_funcs_size *= 2;
         ctx -> defined_funcs = realloc(ctx -> defined_funcs, ctx -> defined_funcs_size * sizeof(char*));
@@ -193,29 +193,131 @@ char* linux_x86_64_Char(lqdCharNode* node, lqdCompilerContext* ctx) {
     strconcat(&chr, "\n");
     return chr;
 };
-char* linux_x86_64_String(lqdStringNode* node, lqdCompilerContext* ctx) {
-    char* str_name = malloc(1);
-    str_name[0] = 0;
-    strconcat(&str_name, "str");
-    char* tmp = malloc(8);
+char* linux_x86_64_Array(lqdArrayNode* node, lqdCompilerContext* ctx) {
+    char* arr_body = malloc(1);
+    arr_body[0] = 0;
+    // Note to self bcuz I'm prolly gonna forget what this code does:
+    //  - Allocate memory for the existing elements (times 2)
+    //  - Put all the elements into the array
+    //  - Create C-style size and value counters (uint64_t)
     lqdCompilerContext* top_lvl_ctx = ctx;
     while (top_lvl_ctx -> is_child_ctx)top_lvl_ctx = top_lvl_ctx -> parent_ctx;
-    sprintf(tmp, "%li", top_lvl_ctx -> defined_strings++);
-    strconcat(&str_name, tmp);
+    char* tmp = malloc(8);
+    sprintf(tmp, "%li", top_lvl_ctx -> defined_arrays++);
+    char* tmp5 = malloc(8);
+    sprintf(tmp5, "%li", node -> values -> values);
+    strconcat(get_glob_section_bss(ctx), "    arr");
+    strconcat(get_glob_section_bss(ctx), tmp);
+    strconcat(get_glob_section_bss(ctx), ":");
+    strconcat(get_glob_section_bss(ctx), "\n        arr");
+    strconcat(get_glob_section_bss(ctx), tmp);
+    strconcat(get_glob_section_bss(ctx), "values: resq 1\n");
+    strconcat(get_glob_section_bss(ctx), "        arr");
+    strconcat(get_glob_section_bss(ctx), tmp);
+    strconcat(get_glob_section_bss(ctx), "size: resq 1\n");
+    strconcat(get_glob_section_bss(ctx), "        arr");
+    strconcat(get_glob_section_bss(ctx), tmp);
+    strconcat(get_glob_section_bss(ctx), "elements: resq ");
+    char* tmp2 = malloc(8);
+    sprintf(tmp2, "%li", node -> values -> size);
+    strconcat(get_glob_section_bss(ctx), tmp2);
+    strconcat(get_glob_section_bss(ctx), "\n");
+    for (uint64_t i = 0; i < node -> values -> values; i++) {
+        char* tmp3 = linux_x86_64_compile_stmnt(node -> values -> statements[i], ctx, 0);
+        strconcat(&arr_body, tmp3);
+        free(tmp3);
+        strconcat(&arr_body, "    pop rax\n");
+        strconcat(&arr_body, "    mov [arr");
+        strconcat(&arr_body, tmp);
+        strconcat(&arr_body, "elements+");
+        char* tmp4 = malloc(8);
+        tmp4[0] = 0;
+        sprintf(tmp4, "%ld", i * 8);
+        strconcat(&arr_body, tmp4);
+        free(tmp4);
+        strconcat(&arr_body, "], rax\n");
+    }
+    strconcat(&arr_body, "    mov rax, ");
+    strconcat(&arr_body, tmp2);
+    strconcat(&arr_body, "\n");
+    strconcat(&arr_body, "    mov [arr");
+    strconcat(&arr_body, tmp);
+    strconcat(&arr_body, "size], rax\n");
+    strconcat(&arr_body, "    mov rax, ");
+    strconcat(&arr_body, tmp5);
+    strconcat(&arr_body, "\n");
+    strconcat(&arr_body, "    mov [arr");
+    strconcat(&arr_body, tmp);
+    strconcat(&arr_body, "values], rax\n");
+    strconcat(&arr_body, "    push arr");
+    strconcat(&arr_body, tmp);
+    strconcat(&arr_body, "\n");
+    free(tmp2);
+    free(tmp5);
     free(tmp);
-    char** section_data = get_glob_section_data(ctx);
-    strconcat(section_data, "    ");
-    strconcat(section_data, str_name);
-    strconcat(section_data, ": db \"");
-    strconcat(section_data, node -> tok.value);
-    strconcat(section_data, "\"\n");
-    char* ret_string = malloc(1);
-    ret_string[0] = 0;
-    strconcat(&ret_string, "    push ");
-    strconcat(&ret_string, str_name);
-    strconcat(&ret_string, "\n");
-    free(str_name);
-    return ret_string;
+    return arr_body;
+}
+char* linux_x86_64_String(lqdStringNode* node, lqdCompilerContext* ctx) {
+    char* str_body = malloc(1);
+    str_body[0] = 0;
+    lqdCompilerContext* top_lvl_ctx = ctx;
+    while (top_lvl_ctx -> is_child_ctx)top_lvl_ctx = top_lvl_ctx -> parent_ctx;
+    char* tmp = malloc(8);
+    sprintf(tmp, "%li", top_lvl_ctx -> defined_arrays++);
+    char* tmp5 = malloc(8);
+    sprintf(tmp5, "%li", strlen(node -> tok.value));
+    strconcat(get_glob_section_bss(ctx), "    str");
+    strconcat(get_glob_section_bss(ctx), tmp);
+    strconcat(get_glob_section_bss(ctx), ":");
+    strconcat(get_glob_section_bss(ctx), "\n        str");
+    strconcat(get_glob_section_bss(ctx), tmp);
+    strconcat(get_glob_section_bss(ctx), "values: resq 1\n");
+    strconcat(get_glob_section_bss(ctx), "        str");
+    strconcat(get_glob_section_bss(ctx), tmp);
+    strconcat(get_glob_section_bss(ctx), "size: resq 1\n");
+    strconcat(get_glob_section_bss(ctx), "        str");
+    strconcat(get_glob_section_bss(ctx), tmp);
+    strconcat(get_glob_section_bss(ctx), "elements: resq ");
+    char* tmp2 = malloc(8);
+    sprintf(tmp2, "%li", strlen(node -> tok.value));
+    strconcat(get_glob_section_bss(ctx), tmp2);
+    strconcat(get_glob_section_bss(ctx), "\n");
+    for (uint64_t i = 0; i < strlen(node -> tok.value); i++) {
+        strconcat(&str_body, "    mov rax, ");
+        char* tmp6 = malloc(4);
+        sprintf(tmp6, "%d", node -> tok.value[i]);
+        strconcat(&str_body, tmp6);
+        strconcat(&str_body, "\n");
+        free(tmp6);
+        strconcat(&str_body, "    mov [str");
+        strconcat(&str_body, tmp);
+        strconcat(&str_body, "elements+");
+        char* tmp4 = malloc(8);
+        tmp4[0] = 0;
+        sprintf(tmp4, "%ld", i * 8);
+        strconcat(&str_body, tmp4);
+        free(tmp4);
+        strconcat(&str_body, "], rax\n");
+    }
+    strconcat(&str_body, "    mov rax, ");
+    strconcat(&str_body, tmp2);
+    strconcat(&str_body, "\n");
+    strconcat(&str_body, "    mov [str");
+    strconcat(&str_body, tmp);
+    strconcat(&str_body, "size], rax\n");
+    strconcat(&str_body, "    mov rax, ");
+    strconcat(&str_body, tmp5);
+    strconcat(&str_body, "\n");
+    strconcat(&str_body, "    mov [str");
+    strconcat(&str_body, tmp);
+    strconcat(&str_body, "values], rax\n");
+    strconcat(&str_body, "    push str");
+    strconcat(&str_body, tmp);
+    strconcat(&str_body, "\n");
+    free(tmp2);
+    free(tmp5);
+    free(tmp);
+    return str_body;
 };
 char* linux_x86_64_VarAccess(lqdVarAccessNode* node, lqdCompilerContext* ctx) {
     int var_idx = 0;
@@ -246,6 +348,18 @@ char* linux_x86_64_VarAccess(lqdVarAccessNode* node, lqdCompilerContext* ctx) {
     strconcat(&var_access, "    mov rax, [");
     strconcat(&var_access, node -> path -> tokens[0].value);
     strconcat(&var_access, "]\n    push rax\n");
+    if (node -> has_slice) {
+        strconcat(&var_access, "    pop rsi\n");
+        char* tmp = linux_x86_64_compile_stmnt(node -> slice, ctx, 0);
+        strconcat(&var_access, tmp);
+        strconcat(&var_access, "    pop rax\n");
+        strconcat(&var_access, "    xor rdx, rdx\n");
+        strconcat(&var_access, "    mov rcx, 8\n");
+        strconcat(&var_access, "    mul rcx\n");
+        strconcat(&var_access, "    mov rbx, [rsi+16+rax]\n");
+        strconcat(&var_access, "    push rbx\n");
+        free(tmp);
+    }
     return var_access;
 };
 char* linux_x86_64_BinOp(lqdBinOpNode* node, lqdCompilerContext* ctx) {
@@ -348,7 +462,7 @@ char* linux_x86_64_VarDecl(lqdVarDeclNode* node, lqdCompilerContext* ctx) {
     return var_body;
 };
 char* linux_x86_64_FuncDecl(lqdFuncDeclNode* node, lqdCompilerContext* ctx) {
-    define_func(ctx, node -> name.value, node -> params -> values);
+    define_func(ctx, node -> name.value, node -> params);
     char* func_body = malloc(1);
     func_body[0] = 0;
     if (node -> is_extern) {
@@ -366,9 +480,21 @@ char* linux_x86_64_FuncDecl(lqdFuncDeclNode* node, lqdCompilerContext* ctx) {
     strconcat(&func_body, ":\n");
     strconcat(&func_body, "    push rbp\n");
     strconcat(&func_body, "    mov rbp, rsp\n");
-    char* tmp = linux_x86_64_compile_stmnt(node -> statement, ctx, 2);
-    strconcat(&func_body, tmp);
-    free(tmp);
+    lqdStatementsNode* stmnts = lqdStatementsNode_new(1);
+    lqdStatementsNode_push(stmnts, node -> statement);
+    char* code;
+    if (node -> statement.type == NT_Statements) {
+        lqdCompilerContext* child_ctx = create_context(ctx -> code, ctx -> filename, 1, 2);
+        child_ctx -> parent_ctx = ctx;
+        code = linux_x86_64_compile_statements(stmnts, child_ctx);
+        delete_context(child_ctx);
+    } else {
+        code = linux_x86_64_compile_statements(stmnts, ctx);
+    }
+    free(stmnts -> statements);
+    free(stmnts);
+    strconcat(&func_body, code);
+    free(code);
     strconcat(&func_body, "    mov rsp, rbp\n");
     strconcat(&func_body, "    pop rbp\n");
     strconcat(&func_body, "    ret\n");
@@ -418,8 +544,15 @@ char* linux_x86_64_FuncCall(lqdFuncCallNode* node, lqdCompilerContext* ctx) {
     }
     if (found == -1)
         lqdCompilerError(ctx, node -> call_path -> tokens[0].line, node -> call_path -> tokens[0].idx_start, node -> call_path -> tokens[0].idx_end, "Undefined function!");
-    if ((int) node -> args -> values != current_ctx -> func_params[(int)found])
+    if (node -> args -> values != current_ctx -> func_params[(int)found] -> values)
         lqdCompilerError(ctx, node -> call_path -> tokens[0].line, node -> call_path -> tokens[0].idx_start, node -> call_path -> tokens[0].idx_end, "Invalid number of arguments!");
+    /* TODO: This.
+    for (uint64_t i = 0; i < node -> args -> values; i++) {
+        // TODO: Point to which argument specifically
+        if (get_type(node -> args -> statements[i]) != current_ctx -> func_params[(int)found] -> params[i].type)
+            lqdCompilerError(ctx, node -> call_path -> tokens[0].line, node -> call_path -> tokens[0].idx_start, node -> call_path -> tokens[0].idx_end, "Invalid argument types!"); 
+    }
+    */
     char* call_body = malloc(1);
     call_body[0] = 0;
     for (int i = node -> args -> values - 1; i >= 0; i--) {
@@ -598,6 +731,12 @@ char* linux_x86_64_compile_statements(lqdStatementsNode* statements, lqdCompiler
                 char* str = linux_x86_64_String((lqdStringNode*)statements -> statements[i].node, ctx);
                 strconcat(&section_text, str);
                 free(str);
+                break;
+            }
+            case NT_Arr: {
+                char* arr = linux_x86_64_Array((lqdArrayNode*)statements -> statements[i].node, ctx);
+                strconcat(&section_text, arr);
+                free(arr);
                 break;
             }
             case NT_VarAccess: {

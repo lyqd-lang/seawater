@@ -12,6 +12,7 @@ typedef enum {
     NT_VarAccess,
     NT_BinOp,
     NT_Unary,
+    NT_Arr,
 
     NT_VarDecl,
     NT_FuncDecl,
@@ -154,6 +155,10 @@ typedef struct {
     lqdTokenArray* struct_path;
     lqdStatementsNode* args;
 } lqdConstructorNode;
+
+typedef struct {
+    lqdStatementsNode* values;
+} lqdArrayNode;
 
 lqdStatementsNode* lqdStatementsNode_new(uint64_t size);
 void lqdStatementsNode_push(lqdStatementsNode* arr, lqdASTNode statement);
