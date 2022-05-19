@@ -156,28 +156,28 @@ char** get_glob_section_bss(lqdCompilerContext* ctx) {
     return &current_ctx -> section_bss;
 }
 
-char* linux_x86_64_compile_statements(lqdStatementsNode* statements, lqdCompilerContext* ctx);
-char* linux_x86_64_compile_stmnt(lqdASTNode statement, lqdCompilerContext* ctx, uint64_t context_header) {
+char* x86_64_compile_statements(lqdStatementsNode* statements, lqdCompilerContext* ctx);
+char* x86_64_compile_stmnt(lqdASTNode statement, lqdCompilerContext* ctx, uint64_t context_header) {
     lqdStatementsNode* stmnts = lqdStatementsNode_new(1);
     lqdStatementsNode_push(stmnts, statement);
     char* code;
     if (statement.type == NT_Statements) {
         lqdCompilerContext* child_ctx = create_context(ctx -> code, ctx -> filename, 1, context_header);
         child_ctx -> parent_ctx = ctx;
-        code = linux_x86_64_compile_statements(stmnts, child_ctx);
+        code = x86_64_compile_statements(stmnts, child_ctx);
         delete_context(child_ctx);
     } else {
-        code = linux_x86_64_compile_statements(stmnts, ctx);
+        code = x86_64_compile_statements(stmnts, ctx);
     }
     free(stmnts -> statements);
     free(stmnts);
     return code;
 }
 
-char* linux_x86_64_NoStmnt() {
+char* x86_64_NoStmnt() {
     return ""; // Only for lines like `while true;`
 };
-char* linux_x86_64_Number(lqdNumberNode* node, lqdCompilerContext* ctx) {
+char* x86_64_Number(lqdNumberNode* node, lqdCompilerContext* ctx) {
     char* num = malloc(1);
     num[0] = 0;
     strconcat(&num, "    push ");
@@ -185,7 +185,7 @@ char* linux_x86_64_Number(lqdNumberNode* node, lqdCompilerContext* ctx) {
     strconcat(&num, "\n");
     return num;
 };
-char* linux_x86_64_Char(lqdCharNode* node, lqdCompilerContext* ctx) {
+char* x86_64_Char(lqdCharNode* node, lqdCompilerContext* ctx) {
     char* chr = malloc(1);
     chr[0] = 0;
     strconcat(&chr, "    push ");
@@ -193,7 +193,7 @@ char* linux_x86_64_Char(lqdCharNode* node, lqdCompilerContext* ctx) {
     strconcat(&chr, "\n");
     return chr;
 };
-char* linux_x86_64_Array(lqdArrayNode* node, lqdCompilerContext* ctx) {
+char* x86_64_Array(lqdArrayNode* node, lqdCompilerContext* ctx) {
     char* arr_body = malloc(1);
     arr_body[0] = 0;
     // Note to self bcuz I'm prolly gonna forget what this code does:
@@ -223,7 +223,7 @@ char* linux_x86_64_Array(lqdArrayNode* node, lqdCompilerContext* ctx) {
     strconcat(get_glob_section_bss(ctx), tmp2);
     strconcat(get_glob_section_bss(ctx), "\n");
     for (uint64_t i = 0; i < node -> values -> values; i++) {
-        char* tmp3 = linux_x86_64_compile_stmnt(node -> values -> statements[i], ctx, 0);
+        char* tmp3 = x86_64_compile_stmnt(node -> values -> statements[i], ctx, 0);
         strconcat(&arr_body, tmp3);
         free(tmp3);
         strconcat(&arr_body, "    pop rax\n");
@@ -257,7 +257,7 @@ char* linux_x86_64_Array(lqdArrayNode* node, lqdCompilerContext* ctx) {
     free(tmp);
     return arr_body;
 }
-char* linux_x86_64_String(lqdStringNode* node, lqdCompilerContext* ctx) {
+char* x86_64_String(lqdStringNode* node, lqdCompilerContext* ctx) {
     char* str_body = malloc(1);
     str_body[0] = 0;
     lqdCompilerContext* top_lvl_ctx = ctx;
@@ -319,29 +319,21 @@ char* linux_x86_64_String(lqdStringNode* node, lqdCompilerContext* ctx) {
     free(tmp);
     return str_body;
 };
-char* linux_x86_64_VarAccess(lqdVarAccessNode* node, lqdCompilerContext* ctx) {
-    int var_idx = 0;
-    int var_idx_real = 0;
-    char is_bottom = 1;
+char* x86_64_VarAccess(lqdVarAccessNode* node, lqdCompilerContext* ctx) {
+    int exists = 0;
     lqdCompilerContext* current_ctx = ctx;
     while (current_ctx -> is_child_ctx) {
         for (uint64_t i = 0; i < current_ctx -> defined_vars_vals; i++)
             if (!strcmp(current_ctx -> defined_vars[i], node -> path -> tokens[0].value)) {
-                var_idx = 1;
-                var_idx_real += (int) i;
+                exists = 1;
             }
-        if (!var_idx) {
-            var_idx_real -= ctx -> header;
-            if (ctx -> header && is_bottom) { // I actually have no fucking clue why
-                var_idx_real--; // this is needed, but without it
-                is_bottom = 0; // clyqd doesn't work.
-            }
+        if (!exists) {
             current_ctx = current_ctx -> parent_ctx;
         } else {
             break;
         }
     }
-    if (!var_idx)
+    if (!exists)
         lqdCompilerError(ctx, node -> path -> tokens[0].line, node -> path -> tokens[0].idx_start, node -> path -> tokens[node -> path -> values-1].idx_end, "Undefined variable!");
     char* var_access = malloc(1);
     var_access[0] = 0;
@@ -350,25 +342,25 @@ char* linux_x86_64_VarAccess(lqdVarAccessNode* node, lqdCompilerContext* ctx) {
     strconcat(&var_access, "]\n    push rax\n");
     if (node -> has_slice) {
         strconcat(&var_access, "    pop rsi\n");
-        char* tmp = linux_x86_64_compile_stmnt(node -> slice, ctx, 0);
+        char* tmp = x86_64_compile_stmnt(node -> slice, ctx, 0);
         strconcat(&var_access, tmp);
         strconcat(&var_access, "    pop rax\n");
         strconcat(&var_access, "    xor rdx, rdx\n");
         strconcat(&var_access, "    mov rcx, 8\n");
-        strconcat(&var_access, "    mul rcx\n");
+        strconcat(&var_access, "    imul rcx\n");
         strconcat(&var_access, "    mov rbx, [rsi+16+rax]\n");
         strconcat(&var_access, "    push rbx\n");
         free(tmp);
     }
     return var_access;
 };
-char* linux_x86_64_BinOp(lqdBinOpNode* node, lqdCompilerContext* ctx) {
+char* x86_64_BinOp(lqdBinOpNode* node, lqdCompilerContext* ctx) {
     char* binop = malloc(1);
     binop[0] = 0;
-    char* tmp = linux_x86_64_compile_stmnt(node -> left, ctx, 0);
+    char* tmp = x86_64_compile_stmnt(node -> left, ctx, 0);
     strconcat(&binop, tmp);
     free(tmp);
-    tmp = linux_x86_64_compile_stmnt(node -> right, ctx, 0);
+    tmp = x86_64_compile_stmnt(node -> right, ctx, 0);
     strconcat(&binop, tmp);
     free(tmp);
     strconcat(&binop, "    pop rax\n");
@@ -383,13 +375,13 @@ char* linux_x86_64_BinOp(lqdBinOpNode* node, lqdCompilerContext* ctx) {
         case TT_MUL:
             strconcat(&binop, "    xchg rax, rbx\n");
             strconcat(&binop, "    xor rdx, rdx\n");
-            strconcat(&binop, "    mul rbx\n");
+            strconcat(&binop, "    imul rbx\n");
             strconcat(&binop, "    xchg rax, rbx\n");
             break;
         case TT_DIV:
             strconcat(&binop, "    xchg rax, rbx\n");
             strconcat(&binop, "    xor rdx, rdx\n");
-            strconcat(&binop, "    div rbx\n");
+            strconcat(&binop, "    idiv rbx\n");
             strconcat(&binop, "    xchg rax, rbx\n");
             break;
         default:
@@ -438,15 +430,25 @@ char* linux_x86_64_BinOp(lqdBinOpNode* node, lqdCompilerContext* ctx) {
     strconcat(&binop, "    push rbx\n");
     return binop;
 };
-char* linux_x86_64_Unary(lqdUnaryOpNode* node, lqdCompilerContext* ctx) {
-    return "";
+char* x86_64_Unary(lqdUnaryOpNode* node, lqdCompilerContext* ctx) {
+    char* unary = malloc(1);
+    unary[0] = 0;
+    char* tmp = x86_64_compile_stmnt(node -> value, ctx, 0);
+    strconcat(&unary, tmp);
+    free(tmp);
+    strconcat(&unary, "    pop rax\n");
+    strconcat(&unary, "    xor rdx, rdx\n");
+    strconcat(&unary, "    mov rcx, -1\n");
+    strconcat(&unary, "    imul rcx\n");
+    strconcat(&unary, "    push rax\n");
+    return unary;
 };
-char* linux_x86_64_VarDecl(lqdVarDeclNode* node, lqdCompilerContext* ctx) {
+char* x86_64_VarDecl(lqdVarDeclNode* node, lqdCompilerContext* ctx) {
     define_var(ctx, node -> name.value, node -> type.type.value, node -> initialized);
     char* var_body = malloc(1);
     var_body[0] = 0;
     if (node -> initialized) {
-        char* tmp = linux_x86_64_compile_stmnt(node -> initializer, ctx, 0);
+        char* tmp = x86_64_compile_stmnt(node -> initializer, ctx, 0);
         strconcat(&var_body, tmp);
         free(tmp);
     } else {
@@ -461,7 +463,7 @@ char* linux_x86_64_VarDecl(lqdVarDeclNode* node, lqdCompilerContext* ctx) {
     strconcat(&var_body, "], rax\n");
     return var_body;
 };
-char* linux_x86_64_FuncDecl(lqdFuncDeclNode* node, lqdCompilerContext* ctx) {
+char* x86_64_FuncDecl(lqdFuncDeclNode* node, lqdCompilerContext* ctx) {
     define_func(ctx, node -> name.value, node -> params);
     char* func_body = malloc(1);
     func_body[0] = 0;
@@ -486,10 +488,10 @@ char* linux_x86_64_FuncDecl(lqdFuncDeclNode* node, lqdCompilerContext* ctx) {
     if (node -> statement.type == NT_Statements) {
         lqdCompilerContext* child_ctx = create_context(ctx -> code, ctx -> filename, 1, 2);
         child_ctx -> parent_ctx = ctx;
-        code = linux_x86_64_compile_statements(stmnts, child_ctx);
+        code = x86_64_compile_statements(stmnts, child_ctx);
         delete_context(child_ctx);
     } else {
-        code = linux_x86_64_compile_statements(stmnts, ctx);
+        code = x86_64_compile_statements(stmnts, ctx);
     }
     free(stmnts -> statements);
     free(stmnts);
@@ -505,17 +507,17 @@ char* linux_x86_64_FuncDecl(lqdFuncDeclNode* node, lqdCompilerContext* ctx) {
     }
     return func_body;
 };
-char* linux_x86_64_Statements(lqdStatementsNode* node, lqdCompilerContext* ctx) {
+char* x86_64_Statements(lqdStatementsNode* node, lqdCompilerContext* ctx) {
     char* statements_body = malloc(1);
     statements_body[0] = 0;
     for (int i = 0; i < node -> values; i++) {
-        char* stmnt = linux_x86_64_compile_stmnt(node -> statements[i], ctx, 0);
+        char* stmnt = x86_64_compile_stmnt(node -> statements[i], ctx, 0);
         strconcat(&statements_body, stmnt);
         free(stmnt);
     }
     return statements_body;
 };
-char* linux_x86_64_FuncCall(lqdFuncCallNode* node, lqdCompilerContext* ctx) {
+char* x86_64_FuncCall(lqdFuncCallNode* node, lqdCompilerContext* ctx) {
     lqdchar found = -1;
     lqdchar is_nested = 0;
     lqdCompilerContext* current_ctx = ctx;
@@ -556,7 +558,7 @@ char* linux_x86_64_FuncCall(lqdFuncCallNode* node, lqdCompilerContext* ctx) {
     char* call_body = malloc(1);
     call_body[0] = 0;
     for (int i = node -> args -> values - 1; i >= 0; i--) {
-        char* tmp = linux_x86_64_compile_stmnt(node -> args -> statements[i], ctx, 0);
+        char* tmp = x86_64_compile_stmnt(node -> args -> statements[i], ctx, 0);
         strconcat(&call_body, tmp);
         free(tmp);
     }
@@ -567,7 +569,7 @@ char* linux_x86_64_FuncCall(lqdFuncCallNode* node, lqdCompilerContext* ctx) {
     strconcat(&call_body, "\n");
     return call_body;
 };
-char* linux_x86_64_If(lqdIfNode* node, lqdCompilerContext* ctx) {
+char* x86_64_If(lqdIfNode* node, lqdCompilerContext* ctx) {
     char* if_body = malloc(1);
     if_body[0] = 0;
     char* tmp = malloc(8);
@@ -582,7 +584,7 @@ char* linux_x86_64_If(lqdIfNode* node, lqdCompilerContext* ctx) {
         sprintf(tmp2, "%i", i);
         strconcat(&if_body, tmp2);
         strconcat(&if_body, ":\n");
-        char* tmp3 = linux_x86_64_compile_stmnt(node -> conditions -> statements[i], ctx, 0);
+        char* tmp3 = x86_64_compile_stmnt(node -> conditions -> statements[i], ctx, 0);
         strconcat(&if_body, tmp3);
         strconcat(&if_body, "    pop rax\n");
         strconcat(&if_body, "    cmp rax, 1\n");
@@ -593,7 +595,7 @@ char* linux_x86_64_If(lqdIfNode* node, lqdCompilerContext* ctx) {
         strconcat(&if_body, tmp2);
         strconcat(&if_body, "\n");
         free(tmp3);
-        tmp3 = linux_x86_64_compile_stmnt(node -> bodies -> statements[i], ctx, 0);
+        tmp3 = x86_64_compile_stmnt(node -> bodies -> statements[i], ctx, 0);
         strconcat(&if_body, tmp3);
         strconcat(&if_body, "    jmp .if_");
         strconcat(&if_body, tmp);
@@ -610,7 +612,7 @@ char* linux_x86_64_If(lqdIfNode* node, lqdCompilerContext* ctx) {
     strconcat(&if_body, tmp2);
     strconcat(&if_body, ":\n");
     if (node -> has_else_case) {
-        char* else_case = linux_x86_64_compile_stmnt(node -> else_case, ctx, 0);
+        char* else_case = x86_64_compile_stmnt(node -> else_case, ctx, 0);
         strconcat(&if_body, else_case);
         free(else_case);
     }
@@ -621,10 +623,73 @@ char* linux_x86_64_If(lqdIfNode* node, lqdCompilerContext* ctx) {
     free(tmp2);
     return if_body;
 };
-char* linux_x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
-    return "";
+char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
+    int exists = 0;
+    lqdCompilerContext* current_ctx = ctx;
+    while (current_ctx -> is_child_ctx) {
+        for (uint64_t i = 0; i < current_ctx -> defined_vars_vals; i++)
+            if (!strcmp(current_ctx -> defined_vars[i], node -> arr -> tokens[0].value)) {
+                exists = 1;
+            }
+        if (!exists) {
+            current_ctx = current_ctx -> parent_ctx;
+        } else {
+            break;
+        }
+    }
+    if (!exists)
+        lqdCompilerError(ctx, node -> arr -> tokens[0].line, node -> arr -> tokens[0].idx_start, node -> arr -> tokens[node -> arr -> values-1].idx_end, "Undefined array!");
+    char* for_body = malloc(1);
+    for_body[0] = 0;
+    char* tmp = malloc(8);
+    sprintf(tmp, "%li", ctx -> comparison++);
+    strconcat(get_glob_section_bss(ctx), "    ");
+    strconcat(get_glob_section_bss(ctx), node -> iterator.value);
+    strconcat(get_glob_section_bss(ctx), ": resq 1\n");
+    strconcat(&for_body, "    mov rax, [");
+    strconcat(&for_body, node -> arr -> tokens[0].value);
+    strconcat(&for_body, "]\n");
+    strconcat(&for_body, "    mov r8, [rax]\n");
+    strconcat(&for_body, "    lea r9, [rax+16]\n");
+    strconcat(&for_body, "    cmp r8, 0\n");
+    strconcat(&for_body, "    je .for_");
+    strconcat(&for_body, tmp);
+    strconcat(&for_body, "_end\n");
+    strconcat(&for_body, ".for_");
+    strconcat(&for_body, tmp);
+    strconcat(&for_body, ":\n");
+    strconcat(&for_body, "    mov r10, [r9]\n");
+    strconcat(&for_body, "    mov [");
+    strconcat(&for_body, node -> iterator.value);
+    strconcat(&for_body, "], r10\n");
+    lqdStatementsNode* stmnts = lqdStatementsNode_new(1);
+    lqdStatementsNode_push(stmnts, node -> body);
+    char* code;
+    if (node -> body.type == NT_Statements) {
+        lqdCompilerContext* child_ctx = create_context(ctx -> code, ctx -> filename, 1, 0);
+        define_var(child_ctx, node -> iterator.value, "undefined", 1); // TODO: yk
+        child_ctx -> parent_ctx = ctx;
+        code = x86_64_compile_statements(stmnts, child_ctx);
+        delete_context(child_ctx);
+    } else {
+        code = x86_64_compile_statements(stmnts, ctx);
+    }
+    free(stmnts -> statements);
+    free(stmnts);
+    strconcat(&for_body, code);
+    strconcat(&for_body, "    add r9, 8\n");
+    strconcat(&for_body, "    sub r8, 1\n");
+    strconcat(&for_body, "    cmp r8, 0\n");
+    strconcat(&for_body, "    jg .for_");
+    strconcat(&for_body, tmp);
+    strconcat(&for_body, "\n");
+    strconcat(&for_body, ".for_");
+    strconcat(&for_body, tmp);
+    strconcat(&for_body, "_end:\n");
+    free(tmp);
+    return for_body;
 };
-char* linux_x86_64_While(lqdWhileNode* node, lqdCompilerContext* ctx) {
+char* x86_64_While(lqdWhileNode* node, lqdCompilerContext* ctx) {
     char* while_body = malloc(1);
     while_body[0] = 0;
     char* tmp = malloc(8);
@@ -636,13 +701,13 @@ char* linux_x86_64_While(lqdWhileNode* node, lqdCompilerContext* ctx) {
     strconcat(&while_body, ".while_");
     strconcat(&while_body, tmp);
     strconcat(&while_body, ":\n");
-    char* tmp2 = linux_x86_64_compile_stmnt(node -> body, ctx, 0);
+    char* tmp2 = x86_64_compile_stmnt(node -> body, ctx, 0);
     strconcat(&while_body, tmp2);
     free(tmp2);
     strconcat(&while_body, ".while_");
     strconcat(&while_body, tmp);
     strconcat(&while_body, "_end:\n");
-    tmp2 = linux_x86_64_compile_stmnt(node -> condition, ctx, 0);
+    tmp2 = x86_64_compile_stmnt(node -> condition, ctx, 0);
     strconcat(&while_body, tmp2);
     strconcat(&while_body, "    pop rax\n");
     strconcat(&while_body, "    cmp rax, 1\n");
@@ -653,10 +718,10 @@ char* linux_x86_64_While(lqdWhileNode* node, lqdCompilerContext* ctx) {
     free(tmp);
     return while_body;
 };
-char* linux_x86_64_Struct(lqdStructNode* node, lqdCompilerContext* ctx) {
+char* x86_64_Struct(lqdStructNode* node, lqdCompilerContext* ctx) {
     return "";
 };
-char* linux_x86_64_VarReassign(lqdVarReassignNode* node, lqdCompilerContext* ctx) {
+char* x86_64_VarReassign(lqdVarReassignNode* node, lqdCompilerContext* ctx) {
     int var_idx = 0;
     int var_idx_real = 0;
     lqdchar is_bottom = 1;
@@ -682,7 +747,7 @@ char* linux_x86_64_VarReassign(lqdVarReassignNode* node, lqdCompilerContext* ctx
         lqdCompilerError(ctx, node -> var -> tokens[0].line, node -> var -> tokens[0].idx_start, node -> var -> tokens[node -> var -> values-1].idx_end, "Undefined variable!");
     char* var_reassign = malloc(1);
     var_reassign[0] = 0;
-    char* tmp2 = linux_x86_64_compile_stmnt(node -> value, ctx, 0);
+    char* tmp2 = x86_64_compile_stmnt(node -> value, ctx, 0);
     strconcat(&var_reassign, tmp2);
     free(tmp2);
     strconcat(&var_reassign, "    pop rax\n");
@@ -691,132 +756,132 @@ char* linux_x86_64_VarReassign(lqdVarReassignNode* node, lqdCompilerContext* ctx
     strconcat(&var_reassign, "], rax\n");
     return var_reassign;
 };
-char* linux_x86_64_Return(lqdReturnNode* node, lqdCompilerContext* ctx) {
+char* x86_64_Return(lqdReturnNode* node, lqdCompilerContext* ctx) {
     return "";
 };
-char* linux_x86_64_Continue(lqdContinueNode* node, lqdCompilerContext* ctx) {
+char* x86_64_Continue(lqdContinueNode* node, lqdCompilerContext* ctx) {
     return "";
 };
-char* linux_x86_64_Break(lqdBreakNode* node, lqdCompilerContext* ctx) {
+char* x86_64_Break(lqdBreakNode* node, lqdCompilerContext* ctx) {
     return "";
 };
-char* linux_x86_64_Construct(lqdConstructorNode* node, lqdCompilerContext* ctx) {
+char* x86_64_Construct(lqdConstructorNode* node, lqdCompilerContext* ctx) {
     return "";
 };
-char* linux_x86_64_Employ(lqdEmployNode* node, lqdCompilerContext* ctx) {
+char* x86_64_Employ(lqdEmployNode* node, lqdCompilerContext* ctx) {
     return "";
 };
 
-char* linux_x86_64_compile_statements(lqdStatementsNode* statements, lqdCompilerContext* ctx) {
+char* x86_64_compile_statements(lqdStatementsNode* statements, lqdCompilerContext* ctx) {
     char* section_text = malloc(1);
     section_text[0] = 0;
     for (uint64_t i = 0; i < statements -> values; i++) {
         switch (statements -> statements[i].type) {
             case NT_NoStmnt:
-                strconcat(&section_text, linux_x86_64_NoStmnt());
+                strconcat(&section_text, x86_64_NoStmnt());
                 break;
             case NT_Number: {
-                char* num = linux_x86_64_Number((lqdNumberNode*)statements -> statements[i].node, ctx);
+                char* num = x86_64_Number((lqdNumberNode*)statements -> statements[i].node, ctx);
                 strconcat(&section_text, num);
                 free(num);
                 break;
             }
             case NT_Char: {
-                char* chr = linux_x86_64_Char((lqdCharNode*)statements -> statements[i].node, ctx);
+                char* chr = x86_64_Char((lqdCharNode*)statements -> statements[i].node, ctx);
                 strconcat(&section_text, chr);
                 free(chr);
                 break;
             }
             case NT_String: {
-                char* str = linux_x86_64_String((lqdStringNode*)statements -> statements[i].node, ctx);
+                char* str = x86_64_String((lqdStringNode*)statements -> statements[i].node, ctx);
                 strconcat(&section_text, str);
                 free(str);
                 break;
             }
             case NT_Arr: {
-                char* arr = linux_x86_64_Array((lqdArrayNode*)statements -> statements[i].node, ctx);
+                char* arr = x86_64_Array((lqdArrayNode*)statements -> statements[i].node, ctx);
                 strconcat(&section_text, arr);
                 free(arr);
                 break;
             }
             case NT_VarAccess: {
-                char* var_access = linux_x86_64_VarAccess((lqdVarAccessNode*)statements -> statements[i].node, ctx);
+                char* var_access = x86_64_VarAccess((lqdVarAccessNode*)statements -> statements[i].node, ctx);
                 strconcat(&section_text, var_access);
                 free(var_access);
                 break;
             }
             case NT_BinOp: {
-                char* op = linux_x86_64_BinOp((lqdBinOpNode*)statements -> statements[i].node, ctx);
+                char* op = x86_64_BinOp((lqdBinOpNode*)statements -> statements[i].node, ctx);
                 strconcat(&section_text, op);
                 free(op);
                 break;
             }
             case NT_Unary:
-                strconcat(&section_text, linux_x86_64_Unary((lqdUnaryOpNode*)statements -> statements[i].node, ctx));
+                strconcat(&section_text, x86_64_Unary((lqdUnaryOpNode*)statements -> statements[i].node, ctx));
                 break;
             case NT_VarDecl: {
-                char* var_decl = linux_x86_64_VarDecl((lqdVarDeclNode*)statements -> statements[i].node, ctx);
+                char* var_decl = x86_64_VarDecl((lqdVarDeclNode*)statements -> statements[i].node, ctx);
                 strconcat(&section_text, var_decl);
                 free(var_decl);
                 break;
             }
             case NT_FuncDecl: {
-                char* decl = linux_x86_64_FuncDecl((lqdFuncDeclNode*)statements -> statements[i].node, ctx);
+                char* decl = x86_64_FuncDecl((lqdFuncDeclNode*)statements -> statements[i].node, ctx);
                 strconcat(&section_text, decl);
                 free(decl);
                 break;
             }
             case NT_Statements: {
-                char* stmnts = linux_x86_64_Statements((lqdStatementsNode*)statements -> statements[i].node, ctx);
+                char* stmnts = x86_64_Statements((lqdStatementsNode*)statements -> statements[i].node, ctx);
                 strconcat(&section_text, stmnts);
                 free(stmnts);
                 break;
             }
             case NT_FuncCall: {
                 /* TODO: dynamic calling comvention*/
-                char* call = linux_x86_64_FuncCall((lqdFuncCallNode*)statements -> statements[i].node, ctx);
+                char* call = x86_64_FuncCall((lqdFuncCallNode*)statements -> statements[i].node, ctx);
                 strconcat(&section_text, call);
                 free(call);
                 break;
             }
             case NT_If: {
-                char* if_body = linux_x86_64_If((lqdIfNode*)statements -> statements[i].node, ctx);
+                char* if_body = x86_64_If((lqdIfNode*)statements -> statements[i].node, ctx);
                 strconcat(&section_text, if_body);
                 free(if_body);
                 break;
             }
             case NT_For:
-                strconcat(&section_text, linux_x86_64_For((lqdForNode*)statements -> statements[i].node, ctx));
+                strconcat(&section_text, x86_64_For((lqdForNode*)statements -> statements[i].node, ctx));
                 break;
             case NT_While: {
-                char* while_body = linux_x86_64_While((lqdWhileNode*)statements -> statements[i].node, ctx);
+                char* while_body = x86_64_While((lqdWhileNode*)statements -> statements[i].node, ctx);
                 strconcat(&section_text, while_body);
                 free(while_body);
                 break;
             }
             case NT_Struct:
-                strconcat(&section_text, linux_x86_64_Struct((lqdStructNode*)statements -> statements[i].node, ctx));
+                strconcat(&section_text, x86_64_Struct((lqdStructNode*)statements -> statements[i].node, ctx));
                 break;
             case NT_VarReassign: {
-                char* reassign_body = linux_x86_64_VarReassign((lqdVarReassignNode*)statements -> statements[i].node, ctx);
+                char* reassign_body = x86_64_VarReassign((lqdVarReassignNode*)statements -> statements[i].node, ctx);
                 strconcat(&section_text, reassign_body);
                 free(reassign_body);
                 break;
             }
             case NT_Return:
-                strconcat(&section_text, linux_x86_64_Return((lqdReturnNode*)statements -> statements[i].node, ctx));
+                strconcat(&section_text, x86_64_Return((lqdReturnNode*)statements -> statements[i].node, ctx));
                 break;
             case NT_Continue:
-                strconcat(&section_text, linux_x86_64_Continue((lqdContinueNode*)statements -> statements[i].node, ctx));
+                strconcat(&section_text, x86_64_Continue((lqdContinueNode*)statements -> statements[i].node, ctx));
                 break;
             case NT_Break:
-                strconcat(&section_text, linux_x86_64_Break((lqdBreakNode*)statements -> statements[i].node, ctx));
+                strconcat(&section_text, x86_64_Break((lqdBreakNode*)statements -> statements[i].node, ctx));
                 break;
             case NT_Construct:
-                strconcat(&section_text, linux_x86_64_Construct((lqdConstructorNode*)statements -> statements[i].node, ctx));
+                strconcat(&section_text, x86_64_Construct((lqdConstructorNode*)statements -> statements[i].node, ctx));
                 break;
             case NT_Employ:
-                strconcat(&section_text, linux_x86_64_Employ((lqdEmployNode*)statements -> statements[i].node, ctx));
+                strconcat(&section_text, x86_64_Employ((lqdEmployNode*)statements -> statements[i].node, ctx));
                 break;
             default:
                 break;
@@ -825,12 +890,12 @@ char* linux_x86_64_compile_statements(lqdStatementsNode* statements, lqdCompiler
     return section_text;
 }
 
-char* linux_x86_64_compile(lqdStatementsNode* statements, char* code, char* filename) {
+char* x86_64_compile(lqdStatementsNode* statements, char* code, char* filename) {
     char* section_text = malloc(1);
     lqdCompilerContext* ctx = create_context(code, filename, 0, 0);
     section_text[0] = 0;
     
-    char* _code = linux_x86_64_compile_statements(statements, ctx);
+    char* _code = x86_64_compile_statements(statements, ctx);
     strconcat(&section_text, _code);
     free(_code);
 

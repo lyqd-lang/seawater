@@ -104,7 +104,7 @@ int main(int argc, char** argv) {
     lqdStatementsNode* AST = parse(tokens, code, source_file);
     if (*output_file == 0)
         output_file = dof;
-    char* new_code = linux_x86_64_compile(AST, code, source_file);
+    char* new_code = x86_64_compile(AST, code, source_file);
     file = fopen("lqdtmp.asm", "w");
     fputs(new_code, file);
     fclose(file);
