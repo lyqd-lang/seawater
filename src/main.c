@@ -10,6 +10,16 @@ char* output_file = "\0";
 char keep_asm = 0;
 char produce_binary = 0;
 char* source_file = "\0";
+char* dof = "a";
+#ifdef __WIN64
+    char* format = "win64";
+    char* linker = "link.exe";
+    char* os     = "windows 64bit";
+#else
+    char* format = "elf64";
+    char* linker = "ld";
+    char* os     = "unix 64bit";
+#endif
 
 char** object_files;
 int object_values = 0;
@@ -27,6 +37,7 @@ void append_object(char* obj) {
 }
 
 void show_help(char** argv) {
+    printf("Seawater compiler on %s\n", os);
     printf("Usage: %s <file.lqd>\n", argv[0]);
     printf("-v                 Print the compiler version\n");
     printf("-o <file>          Specify output file\n");
@@ -92,19 +103,19 @@ int main(int argc, char** argv) {
     lqdTokenArray* tokens = tokenize(code, source_file);
     lqdStatementsNode* AST = parse(tokens, code, source_file);
     if (*output_file == 0)
-        output_file = "clqd_bin"; // cause we just that cool
+        output_file = dof;
     char* new_code = linux_x86_64_compile(AST, code, source_file);
     file = fopen("lqdtmp.asm", "w");
     fputs(new_code, file);
     fclose(file);
     char* cmd = malloc(1024);
-    sprintf(cmd, "nasm -o %s.o lqdtmp.asm -felf64", output_file);
+    sprintf(cmd, "nasm -o %s.o lqdtmp.asm -f %s", output_file, format);
     system(cmd);
     remove("lqdtmp.o");
     if (produce_binary) {
         char* obj = malloc(256);
         sprintf(obj, "%s.o", output_file);
-        sprintf(cmd, "ld %s.o -o %s", output_file, output_file);
+        sprintf(cmd, "%s %s.o -o %s", linker, output_file, output_file);
         for (int i = 0; i < object_values; i++) {
             strcat(cmd, " ");
             strcat(cmd, object_files[i]);

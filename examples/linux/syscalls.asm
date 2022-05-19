@@ -19,16 +19,3 @@ exit:
     mov rax, 60
     syscall
     ret
-
-global puts ; TODO: Fix this function, not exactly sure where it's going wrong tho
-puts:
-    push rbp
-    mov rbp, rsp
-    mov rax, 1
-    mov rdi, 1
-    mov rsi, [rbp + 16]
-    mov rdx, [rbp + 8]
-    syscall
-    mov rsp, rbp
-    pop rbp
-    ret

@@ -13,6 +13,6 @@ release:
 debug:
 	$(PY) build.py -d
 windows:
-	$(PY) build.py -c i686-mingw32-gcc
+	$(PY) build.py -c i686-w64-mingw32-gcc
 clean:
 	$(PY) build.py --clean

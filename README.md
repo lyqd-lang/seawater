@@ -15,35 +15,35 @@ The seawater compiler takes in a few arguments:<br/>
 # Examples
 seawater as of right now is really barebones. Tho it's capable of compile a few programs.<br/>
 ## Linux
-Ye idfk how windows does kernel calls 'n shit so here's a linux section:<br/>
 Before you get started compiling lyqd code, you must compile `syscalls.asm`. It's a file containing some simple I/O functions. To compile it, run:<br/>
 `nasm -o syscalls.o examples/linux/syscalls.asm -felf64`<br/>
-Now you can compile very simple programs like:
-```
-// Here tell the compiler that we got a function defined in another file
-extern puts(str text, num length);
-
-// Main entry point of program, called from _start
-fn main() {
-    // Call the Linux kernel and tell it to write "Hello, world!"
-    // to the standard output. The backend of this function is
-    // defined in examples/linux/syscalls.asm
-    puts("Hello, world!\n", 14);
-    // By default, seawater will exit with returncode 0, so no
-    // need for a `return 0;`
-}
-```
-Assuming you save the above code into a file called `helloworld.lqd`, you can run:<br/>
-`bin/lyqd helloworld.lqd -o helloworld -l syscalls.o -pb`<br/>
+Now you can compile a helloworld program!<br/>
+`bin/clyqd examples/linux/test.lqd -o helloworld -l syscalls.o -pb`<br/>
 So the end result will look something like:
 ```
 $ nasm -o syscalls.o examples/linux/syscalls.asm -felf64
-$ bin/lyqd helloworld.lqd -o helloworld -l syscalls.o -pb
+$ bin/clyqd helloworld.lqd -o helloworld -l syscalls.o -pb
 $ ./helloworld
 Hello, world!
 $
 ```
-
+## Windows
+To compile on windows you're gonna need hese chocolatey packages:
+ - nasm
+ - visualstudio2017buildtools
+ - visualstudio2017-workload-vctools
+Once you've got these, you're gonna create a file called `vcexec.bat`<br/>
+in this file put:
+```
+call "C:\\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" amd64 %*
+```
+Then run `nasm .\examples\windows\console.asm -o console.o -fwin64`
+<br/><br/>
+Alright now you're ready to start compiling some programs!<br/>
+You can (mostly) follow the steps above.
+But to compile a lyqd program on windows you're gonna have to do it manually:<br/>
+`.\bin\clyqd.exe .\examples\linux\test.lqd`<br/><br/>
+`powershell -Command "~\\vsexec.bat link /entry:start /subsystem:console a.o console.o kernel32.lib"`<br/>
 # Compiling seawater
 ## Dependencies
 * Preffered C compiler

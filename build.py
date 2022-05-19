@@ -86,7 +86,7 @@ class Compiler:
             proc = subprocess.run([self.compiler, "-Iinclude/", "-c", "-o", f"build/{file.replace('.c','.o')}", "src/compilers/" + file])
             if proc.returncode != 0:exit(1)
         print(" ".join([self.compiler, "src/main.c", "-Iinclude/", "-o", f"bin/clyqd{'.exe' if self.os == 'windows' else ''}", *["build/" + x for x in os.listdir("build")]]))
-        proc = subprocess.run([self.compiler, "src/main.c", "-Iinclude/", "-o", f"bin/lyqd{'.exe' if self.os == 'windows' else ''}", *["build/" + x for x in os.listdir("build")]])
+        proc = subprocess.run([self.compiler, "src/main.c", "-Iinclude/", "-o", f"bin/clyqd{'.exe' if self.os == 'windows' else ''}", *["build/" + x for x in os.listdir("build")]])
         if proc.returncode != 0:exit(1)
 
     def compile_debug(self):
@@ -99,11 +99,11 @@ class Compiler:
             proc = subprocess.run([self.compiler, "-Iinclude/", "-fsanitize=undefined,address", "-g3", "-Wall", "-Werror", "-c", "-o", f"build/{file.replace('.c','.o')}", "src/modules/" + file])
             if proc.returncode != 0:exit(1)
         for file in os.listdir("src/compilers"):
-            print(" ".join([self.compiler, "-Iinclude/", "-c", "-o", f"build/{file.replace('.c','.o')}", "src/compilers/" + file]))
+            print(" ".join([self.compiler, "-Iinclude/", "-fsanitize=undefined,address", "-g3", "-Wall", "-Werror", "-c", "-o", f"build/{file.replace('.c','.o')}", "src/compilers/" + file]))
             proc = subprocess.run([self.compiler, "-Iinclude/", "-fsanitize=undefined,address", "-g3", "-Wall", "-Werror", "-c", "-o", f"build/{file.replace('.c','.o')}", "src/compilers/" + file])
             if proc.returncode != 0:exit(1)
-        print(" ".join([self.compiler, "src/main.c", "-Iinclude/", "-o", f"bin/lyqd_debug{'.exe' if self.os == 'windows' else ''}", *["build/" + x for x in os.listdir("build")]]))
-        proc = subprocess.run([self.compiler, "src/main.c", "-Iinclude/", "-fsanitize=undefined,address", "-g3", "-Wall", "-Werror", "-o", f"bin/clyqd{'.exe' if self.os == 'windows' else ''}", *["build/" + x for x in os.listdir("build")]])
+        print(" ".join([self.compiler, "src/main.c", "-Iinclude/", "-fsanitize=undefined,address", "-g3", "-Wall", "-Werror", "-o", f"bin/lyqd_debug{'.exe' if self.os == 'windows' else ''}", *["build/" + x for x in os.listdir("build")]]))
+        proc = subprocess.run([self.compiler, "src/main.c", "-Iinclude/", "-fsanitize=undefined,address", "-g3", "-Wall", "-Werror", "-o", f"bin/lyqd_debug{'.exe' if self.os == 'windows' else ''}", *["build/" + x for x in os.listdir("build")]])
         if proc.returncode != 0:exit(1)
 
 def parse_args():
