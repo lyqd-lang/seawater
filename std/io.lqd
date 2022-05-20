@@ -1,0 +1,12 @@
+extern putc(chr char);
+
+fn puts(str string) {
+    for i in string {
+        putc(i);
+    }
+}
+
+fn println(str string) {
+    puts(string);
+    putc(10);
+}

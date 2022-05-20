@@ -11,12 +11,22 @@ typedef struct {
     lqdParameterArray** func_params;
     int defined_funcs_vals;
     int defined_funcs_size;
+    char* is_extern_func;
     
     char** defined_vars;
     char** var_types;
     int defined_vars_vals;
     int defined_vars_size;
     char* var_init;
+
+    char** defined_libs;
+    void** libraries;
+    int libraries_vals;
+    int libraries_size;
+} lqdNamespace;
+
+typedef struct {
+    lqdNamespace* namespace;
 
     uint64_t local_vars;
 
@@ -31,24 +41,36 @@ typedef struct {
     void* parent_ctx;
     char is_child_ctx;
 
+    int id;
+    int child_contexts;
+
+    char is_lib;
+    char* lib_name;
+
     uint64_t comparison;
-    uint64_t header; // How many bytes (divided by 8) to offset variable accesses by
 } lqdCompilerContext;
 
-lqdCompilerContext* create_context(char* code, char* filename, char is_child, uint64_t context_header) {
+lqdCompilerContext* create_context(char* code, char* filename, char is_child, uint64_t id) {
     lqdCompilerContext* ctx = malloc(sizeof(lqdCompilerContext));
     ctx -> code = code;
     ctx -> filename = filename;
-    ctx -> defined_funcs = malloc(4 * sizeof(char*));
-    ctx -> func_params = malloc(4 * sizeof(lqdParameterArray*));
-    ctx -> defined_funcs_size = 4;
-    ctx -> defined_funcs_vals = 0;
+    ctx -> namespace = malloc(sizeof(lqdNamespace));
+    ctx -> namespace -> defined_funcs = malloc(4 * sizeof(char*));
+    ctx -> namespace -> func_params = malloc(4 * sizeof(lqdParameterArray*));
+    ctx -> namespace -> defined_funcs_size = 4;
+    ctx -> namespace -> defined_funcs_vals = 0;
+    ctx -> namespace -> is_extern_func = malloc(4);
 
-    ctx -> defined_vars = malloc(4 * sizeof(char*));
-    ctx -> var_types = malloc(4 * sizeof(char*));
-    ctx -> var_init = malloc(4 * sizeof(char));
-    ctx -> defined_vars_size = 4;
-    ctx -> defined_vars_vals = 0;
+    ctx -> namespace -> defined_vars = malloc(4 * sizeof(char*));
+    ctx -> namespace -> var_types = malloc(4 * sizeof(char*));
+    ctx -> namespace -> var_init = malloc(4 * sizeof(char));
+    ctx -> namespace -> defined_vars_size = 4;
+    ctx -> namespace -> defined_vars_vals = 0;
+
+    ctx -> namespace -> defined_libs = malloc(4 * sizeof(char*));
+    ctx -> namespace -> libraries = malloc(4 * sizeof(lqdNamespace*));
+    ctx -> namespace -> libraries_size = 4;
+    ctx -> namespace -> libraries_vals = 0;
 
     ctx -> local_vars = 0;
 
@@ -60,25 +82,121 @@ lqdCompilerContext* create_context(char* code, char* filename, char is_child, ui
 
     ctx -> is_child_ctx = is_child;
 
+    ctx -> is_lib = 0;
+
     ctx -> comparison = 0;
-    ctx -> header = context_header;
+    ctx -> id = id;
+    ctx -> child_contexts = 0;
     return ctx;
 }
 
-void delete_context(lqdCompilerContext* ctx) {
-    for (int i = 0; i < ctx -> defined_funcs_vals; i++)
-        free(ctx -> defined_funcs[i]);
-    for (int i = 0; i < ctx -> defined_vars_vals; i++) {
-        free(ctx -> defined_vars[i]);
-        free(ctx -> var_types[i]);
+char is_defined(lqdCompilerContext* ctx, char* name) {
+    char exists = 0;
+    lqdCompilerContext* current_ctx = ctx;
+    while (current_ctx -> is_child_ctx) {
+        for (uint64_t i = 0; i < current_ctx -> namespace -> defined_vars_vals; i++) {
+            if (!strcmp(current_ctx -> namespace -> defined_vars[i], name)) {
+                exists = current_ctx -> id;
+            }
+        }
+        if (!exists) {
+            current_ctx = current_ctx -> parent_ctx;
+        } else {
+            break;
+        }
     }
-    free(ctx -> defined_funcs);
+    return exists;
+}
+
+char is_defined_func(lqdCompilerContext* ctx, lqdTokenArray* path) {
+    char exists = -1;
+    char is_nested = 1;
+    char* root = path -> tokens[0].value;
+    int idx = 0;
+    lqdCompilerContext* current_ctx = ctx;
+    uint64_t vals = path -> values == 1 ? current_ctx -> namespace -> defined_funcs_vals : current_ctx -> namespace -> libraries_vals;
+    char** defs = path -> values == 1 ? current_ctx -> namespace -> defined_funcs : current_ctx -> namespace -> defined_libs;
+    while (current_ctx -> is_child_ctx) {
+        for (uint64_t i = 0; i < vals; i++) {
+            if (!strcmp(defs[i], root)) {
+                exists = 1;
+                idx = i;
+            }
+        }
+        if (exists == -1) {
+            current_ctx = current_ctx -> parent_ctx;
+            vals = path -> values == 1 ? current_ctx -> namespace -> defined_funcs_vals : current_ctx -> namespace -> libraries_vals;
+            defs = path -> values == 1 ? current_ctx -> namespace -> defined_funcs : current_ctx -> namespace -> defined_libs;
+            if (!current_ctx -> is_child_ctx) {
+                is_nested = 0;
+                for (uint64_t i = 0; i < vals; i++) {
+                    if (!strcmp(defs[i], root)) {
+                        exists = 1;
+                        idx = i;
+                    }
+                }
+            }
+        } else {
+            break;
+        }
+    }
+    char is_extern = current_ctx -> namespace -> is_extern_func[idx] * 2;
+    if (path -> values > 1) {
+        is_nested = 0;
+        lqdNamespace* currentns = current_ctx -> namespace -> libraries[idx];
+        char found = 0;
+        int i = 1;
+        while (i != path -> values - 1) {
+            for (uint64_t j = 0; j < currentns -> libraries_vals; j++) {
+                if (!strcmp(currentns -> defined_libs[j], path -> tokens[i].value)) {
+                    found = 1;
+                    currentns = currentns -> libraries[j];
+                }
+            }
+            if (!found)
+                return 0;
+            i++;
+        }
+        for (uint64_t j = 0; j < currentns -> defined_funcs_vals; j++) {
+            if (!strcmp(currentns -> defined_funcs[j], path -> tokens[i].value)) {
+                found = 1;
+                is_extern = currentns -> is_extern_func[j] * 2;
+            }
+        }
+        if (!found)
+            exists = -3;
+    }
+    return exists + is_nested + is_extern;
+}
+
+void delete_namespace(lqdNamespace* ns) {
+    for (int i = 0; i < ns -> defined_funcs_vals; i++)
+        free(ns -> defined_funcs[i]);
+    for (int i = 0; i < ns -> defined_vars_vals; i++) {
+        free(ns -> defined_vars[i]);
+        free(ns -> var_types[i]);
+    }
+    for (int i = 0; i < ns -> libraries_vals; i++) {
+        free(ns -> defined_libs[i]);
+        delete_namespace(ns -> libraries[i]);
+    }
+    free(ns -> defined_funcs);
+    free(ns -> func_params);
+    free(ns -> var_init);
+    free(ns -> var_types);
+    free(ns -> defined_vars);
+    free(ns -> libraries);
+    free(ns -> defined_libs);
+    free(ns -> is_extern_func);
+    free(ns);
+}
+
+void delete_context(lqdCompilerContext* ctx) {
+    delete_namespace(ctx -> namespace);
+    if (ctx -> is_lib)
+        free(ctx -> lib_name);
     free(ctx -> section_bss);
     free(ctx -> section_data);
-    free(ctx -> func_params);
-    free(ctx -> var_init);
-    free(ctx -> var_types);
-    free(ctx -> defined_vars);
     free(ctx);
 }
 
@@ -110,31 +228,63 @@ void lqdCompilerError(lqdCompilerContext* ctx, uint64_t line, int idx_start, int
     exit(1);
 }
 
-void define_func(lqdCompilerContext* ctx, char* name, lqdParameterArray* params) {
-    if (ctx -> defined_funcs_vals == ctx -> defined_funcs_size) {
-        ctx -> defined_funcs_size *= 2;
-        ctx -> defined_funcs = realloc(ctx -> defined_funcs, ctx -> defined_funcs_size * sizeof(char*));
-        ctx -> func_params = realloc(ctx -> func_params, ctx -> defined_funcs_size * sizeof(int));
+void define_lib(lqdCompilerContext* ctx, char* name) {
+    if (ctx -> namespace -> libraries_vals == ctx -> namespace -> libraries_size) {
+        ctx -> namespace -> libraries_size *= 2;
+        ctx -> namespace -> libraries = realloc(ctx -> namespace -> libraries, ctx -> namespace -> libraries_size * sizeof(lqdNamespace*));
+        ctx -> namespace -> defined_libs = realloc(ctx -> namespace -> defined_libs, ctx -> namespace -> libraries_size * sizeof(char*));
     }
-    ctx -> defined_funcs[ctx -> defined_funcs_vals] = malloc(strlen(name) + 1);
-    ctx -> func_params[ctx -> defined_funcs_vals] = params;
-    strcpy(ctx -> defined_funcs[ctx -> defined_funcs_vals], name);
-    ctx -> defined_funcs_vals++;
+    ((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals] = (lqdNamespace*) malloc(sizeof(lqdNamespace));
+    ctx -> namespace -> defined_libs[ctx -> namespace -> libraries_vals] = malloc(strlen(name) + 1);
+    strcpy(ctx -> namespace -> defined_libs[ctx -> namespace -> libraries_vals], name);
+
+    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).defined_funcs = malloc(4 * sizeof(char*));
+    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).func_params = malloc(4 * sizeof(lqdParameterArray*));
+    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).defined_funcs_size = 4;
+    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).defined_funcs_vals = 0;
+    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).is_extern_func = malloc(4);
+
+    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).defined_vars = malloc(4 * sizeof(char*));
+    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).var_types = malloc(4 * sizeof(char*));
+    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).var_init = malloc(4 * sizeof(char));
+    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).defined_vars_size = 4;
+    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).defined_vars_vals = 0;
+
+    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).defined_libs = malloc(4 * sizeof(char*));
+    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).libraries = malloc(4 * sizeof(lqdNamespace*));
+    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).libraries_size = 4;
+    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).libraries_vals = 0;
+
+    ctx -> namespace -> libraries_vals++;
+}
+
+void define_func(lqdNamespace* namespace, char* name, lqdParameterArray* params, char is_extern) {
+    if (namespace -> defined_funcs_vals == namespace -> defined_funcs_size) {
+        namespace -> defined_funcs_size *= 2;
+        namespace -> defined_funcs = realloc(namespace -> defined_funcs, namespace -> defined_funcs_size * sizeof(char*));
+        namespace -> func_params = realloc(namespace -> func_params, namespace -> defined_funcs_size * sizeof(int));
+        namespace -> is_extern_func = realloc(namespace -> is_extern_func, namespace -> defined_funcs_size);
+    }
+    namespace -> defined_funcs[namespace -> defined_funcs_vals] = malloc(strlen(name) + 1);
+    namespace -> func_params[namespace -> defined_funcs_vals] = params;
+    namespace -> is_extern_func[namespace -> defined_funcs_vals] = is_extern;
+    strcpy(namespace -> defined_funcs[namespace -> defined_funcs_vals], name);
+    namespace -> defined_funcs_vals++;
 }
 
 void define_var(lqdCompilerContext* ctx, char* name, char* type, char initialized) {
-    if (ctx -> defined_vars_vals == ctx -> defined_vars_size) {
-        ctx -> defined_vars_size *= 2;
-        ctx -> defined_vars = realloc(ctx -> defined_vars, ctx -> defined_vars_size * sizeof(char*));
-        ctx -> var_types = realloc(ctx -> var_types, ctx -> defined_vars_size * sizeof(char*));
-        ctx -> var_init = realloc(ctx -> var_init, ctx -> defined_vars_size);
+    if (ctx -> namespace -> defined_vars_vals == ctx -> namespace -> defined_vars_size) {
+        ctx -> namespace -> defined_vars_size *= 2;
+        ctx -> namespace -> defined_vars = realloc(ctx -> namespace -> defined_vars, ctx -> namespace -> defined_vars_size * sizeof(char*));
+        ctx -> namespace -> var_types = realloc(ctx -> namespace -> var_types, ctx -> namespace -> defined_vars_size * sizeof(char*));
+        ctx -> namespace -> var_init = realloc(ctx -> namespace -> var_init, ctx -> namespace -> defined_vars_size);
     }
-    ctx -> defined_vars[ctx -> defined_vars_vals] = malloc(strlen(name) + 1);
-    ctx -> var_types[ctx -> defined_vars_vals] = malloc(strlen(type) + 1);
-    ctx -> var_init[ctx -> defined_vars_vals] = initialized;
-    strcpy(ctx -> defined_vars[ctx -> defined_vars_vals], name);
-    strcpy(ctx -> var_types[ctx -> defined_vars_vals], type);
-    ctx -> defined_vars_vals++;
+    ctx -> namespace -> defined_vars[ctx -> namespace -> defined_vars_vals] = malloc(strlen(name) + 1);
+    ctx -> namespace -> var_types[ctx -> namespace -> defined_vars_vals] = malloc(strlen(type) + 1);
+    ctx -> namespace -> var_init[ctx -> namespace -> defined_vars_vals] = initialized;
+    strcpy(ctx -> namespace -> defined_vars[ctx -> namespace -> defined_vars_vals], name);
+    strcpy(ctx -> namespace -> var_types[ctx -> namespace -> defined_vars_vals], type);
+    ctx -> namespace -> defined_vars_vals++;
     ctx -> local_vars++;
 }
 
@@ -156,18 +306,25 @@ char** get_glob_section_bss(lqdCompilerContext* ctx) {
     return &current_ctx -> section_bss;
 }
 
-char* x86_64_compile_statements(lqdStatementsNode* statements, lqdCompilerContext* ctx);
-char* x86_64_compile_stmnt(lqdASTNode statement, lqdCompilerContext* ctx, uint64_t context_header) {
+char* x86_64_compile_statements(lqdStatementsNode* statements, lqdCompilerContext* ctx, char* namespace);
+char* x86_64_compile_stmnt(lqdASTNode statement, lqdCompilerContext* ctx) {
     lqdStatementsNode* stmnts = lqdStatementsNode_new(1);
     lqdStatementsNode_push(stmnts, statement);
+    lqdCompilerContext* cc = ctx;
+    while (cc -> is_child_ctx) cc = cc -> parent_ctx;
     char* code;
     if (statement.type == NT_Statements) {
-        lqdCompilerContext* child_ctx = create_context(ctx -> code, ctx -> filename, 1, context_header);
+        lqdCompilerContext* child_ctx = create_context(ctx -> code, ctx -> filename, 1, ++cc -> child_contexts);
+        child_ctx -> is_lib = ctx -> is_lib;
+        if (ctx -> is_lib) {
+            child_ctx -> lib_name = malloc(strlen(ctx -> lib_name) + 1);
+            strcpy(child_ctx -> lib_name, ctx -> lib_name);
+        }
         child_ctx -> parent_ctx = ctx;
-        code = x86_64_compile_statements(stmnts, child_ctx);
+        code = x86_64_compile_statements(stmnts, child_ctx, NULL);
         delete_context(child_ctx);
     } else {
-        code = x86_64_compile_statements(stmnts, ctx);
+        code = x86_64_compile_statements(stmnts, ctx, NULL);
     }
     free(stmnts -> statements);
     free(stmnts);
@@ -223,7 +380,7 @@ char* x86_64_Array(lqdArrayNode* node, lqdCompilerContext* ctx) {
     strconcat(get_glob_section_bss(ctx), tmp2);
     strconcat(get_glob_section_bss(ctx), "\n");
     for (uint64_t i = 0; i < node -> values -> values; i++) {
-        char* tmp3 = x86_64_compile_stmnt(node -> values -> statements[i], ctx, 0);
+        char* tmp3 = x86_64_compile_stmnt(node -> values -> statements[i], ctx);
         strconcat(&arr_body, tmp3);
         free(tmp3);
         strconcat(&arr_body, "    pop rax\n");
@@ -262,9 +419,9 @@ char* x86_64_String(lqdStringNode* node, lqdCompilerContext* ctx) {
     str_body[0] = 0;
     lqdCompilerContext* top_lvl_ctx = ctx;
     while (top_lvl_ctx -> is_child_ctx)top_lvl_ctx = top_lvl_ctx -> parent_ctx;
-    char* tmp = malloc(8);
+    char* tmp = malloc(21);
     sprintf(tmp, "%li", top_lvl_ctx -> defined_arrays++);
-    char* tmp5 = malloc(8);
+    char* tmp5 = malloc(21);
     sprintf(tmp5, "%li", strlen(node -> tok.value));
     strconcat(get_glob_section_bss(ctx), "    str");
     strconcat(get_glob_section_bss(ctx), tmp);
@@ -278,13 +435,13 @@ char* x86_64_String(lqdStringNode* node, lqdCompilerContext* ctx) {
     strconcat(get_glob_section_bss(ctx), "        str");
     strconcat(get_glob_section_bss(ctx), tmp);
     strconcat(get_glob_section_bss(ctx), "elements: resq ");
-    char* tmp2 = malloc(8);
+    char* tmp2 = malloc(21);
     sprintf(tmp2, "%li", strlen(node -> tok.value));
     strconcat(get_glob_section_bss(ctx), tmp2);
     strconcat(get_glob_section_bss(ctx), "\n");
     for (uint64_t i = 0; i < strlen(node -> tok.value); i++) {
         strconcat(&str_body, "    mov rax, ");
-        char* tmp6 = malloc(4);
+        char* tmp6 = malloc(12);
         sprintf(tmp6, "%d", node -> tok.value[i]);
         strconcat(&str_body, tmp6);
         strconcat(&str_body, "\n");
@@ -320,29 +477,21 @@ char* x86_64_String(lqdStringNode* node, lqdCompilerContext* ctx) {
     return str_body;
 };
 char* x86_64_VarAccess(lqdVarAccessNode* node, lqdCompilerContext* ctx) {
-    int exists = 0;
-    lqdCompilerContext* current_ctx = ctx;
-    while (current_ctx -> is_child_ctx) {
-        for (uint64_t i = 0; i < current_ctx -> defined_vars_vals; i++)
-            if (!strcmp(current_ctx -> defined_vars[i], node -> path -> tokens[0].value)) {
-                exists = 1;
-            }
-        if (!exists) {
-            current_ctx = current_ctx -> parent_ctx;
-        } else {
-            break;
-        }
-    }
-    if (!exists)
+    char id = is_defined(ctx, node -> path -> tokens[0].value);
+    if (!id)
         lqdCompilerError(ctx, node -> path -> tokens[0].line, node -> path -> tokens[0].idx_start, node -> path -> tokens[node -> path -> values-1].idx_end, "Undefined variable!");
     char* var_access = malloc(1);
     var_access[0] = 0;
     strconcat(&var_access, "    mov rax, [");
     strconcat(&var_access, node -> path -> tokens[0].value);
+    char* tmp = malloc(12);
+    sprintf(tmp, "%i", id);
+    strconcat(&var_access, tmp);
     strconcat(&var_access, "]\n    push rax\n");
+    free(tmp);
     if (node -> has_slice) {
         strconcat(&var_access, "    pop rsi\n");
-        char* tmp = x86_64_compile_stmnt(node -> slice, ctx, 0);
+        char* tmp = x86_64_compile_stmnt(node -> slice, ctx);
         strconcat(&var_access, tmp);
         strconcat(&var_access, "    pop rax\n");
         strconcat(&var_access, "    xor rdx, rdx\n");
@@ -357,10 +506,10 @@ char* x86_64_VarAccess(lqdVarAccessNode* node, lqdCompilerContext* ctx) {
 char* x86_64_BinOp(lqdBinOpNode* node, lqdCompilerContext* ctx) {
     char* binop = malloc(1);
     binop[0] = 0;
-    char* tmp = x86_64_compile_stmnt(node -> left, ctx, 0);
+    char* tmp = x86_64_compile_stmnt(node -> left, ctx);
     strconcat(&binop, tmp);
     free(tmp);
-    tmp = x86_64_compile_stmnt(node -> right, ctx, 0);
+    tmp = x86_64_compile_stmnt(node -> right, ctx);
     strconcat(&binop, tmp);
     free(tmp);
     strconcat(&binop, "    pop rax\n");
@@ -379,6 +528,7 @@ char* x86_64_BinOp(lqdBinOpNode* node, lqdCompilerContext* ctx) {
             strconcat(&binop, "    xchg rax, rbx\n");
             break;
         case TT_DIV:
+            // TODO: Use runtime implementation
             strconcat(&binop, "    xchg rax, rbx\n");
             strconcat(&binop, "    xor rdx, rdx\n");
             strconcat(&binop, "    idiv rbx\n");
@@ -433,7 +583,7 @@ char* x86_64_BinOp(lqdBinOpNode* node, lqdCompilerContext* ctx) {
 char* x86_64_Unary(lqdUnaryOpNode* node, lqdCompilerContext* ctx) {
     char* unary = malloc(1);
     unary[0] = 0;
-    char* tmp = x86_64_compile_stmnt(node -> value, ctx, 0);
+    char* tmp = x86_64_compile_stmnt(node -> value, ctx);
     strconcat(&unary, tmp);
     free(tmp);
     strconcat(&unary, "    pop rax\n");
@@ -443,12 +593,12 @@ char* x86_64_Unary(lqdUnaryOpNode* node, lqdCompilerContext* ctx) {
     strconcat(&unary, "    push rax\n");
     return unary;
 };
-char* x86_64_VarDecl(lqdVarDeclNode* node, lqdCompilerContext* ctx) {
+char* x86_64_VarDecl(lqdVarDeclNode* node, lqdCompilerContext* ctx, char* namespace) {
     define_var(ctx, node -> name.value, node -> type.type.value, node -> initialized);
     char* var_body = malloc(1);
     var_body[0] = 0;
     if (node -> initialized) {
-        char* tmp = x86_64_compile_stmnt(node -> initializer, ctx, 0);
+        char* tmp = x86_64_compile_stmnt(node -> initializer, ctx);
         strconcat(&var_body, tmp);
         free(tmp);
     } else {
@@ -456,15 +606,20 @@ char* x86_64_VarDecl(lqdVarDeclNode* node, lqdCompilerContext* ctx) {
     }
     strconcat(get_glob_section_bss(ctx), "    ");
     strconcat(get_glob_section_bss(ctx), node -> name.value);
+    char* tmp = malloc(4);
+    sprintf(tmp, "%i", ctx -> id);
+    strconcat(get_glob_section_bss(ctx), tmp);
     strconcat(get_glob_section_bss(ctx), ": resq 1\n"); // Reserve 8 bytes, TODO: replace to match variable type
     strconcat(&var_body, "    pop rax\n");
     strconcat(&var_body, "    mov [");
     strconcat(&var_body, node -> name.value);
+    strconcat(&var_body, tmp);
+    free(tmp);
     strconcat(&var_body, "], rax\n");
     return var_body;
 };
-char* x86_64_FuncDecl(lqdFuncDeclNode* node, lqdCompilerContext* ctx) {
-    define_func(ctx, node -> name.value, node -> params);
+char* x86_64_FuncDecl(lqdFuncDeclNode* node, lqdCompilerContext* ctx, char* namespace) {
+    define_func(ctx -> namespace, node -> name.value, node -> params, node -> is_extern);
     char* func_body = malloc(1);
     func_body[0] = 0;
     if (node -> is_extern) {
@@ -478,20 +633,57 @@ char* x86_64_FuncDecl(lqdFuncDeclNode* node, lqdCompilerContext* ctx) {
         strconcat(&func_body, node -> name.value);
         strconcat(&func_body, "_end\n.");
     }
+    if (namespace != NULL) {
+        strconcat(&func_body, namespace);
+        strconcat(&func_body, "_");
+    }
     strconcat(&func_body, node -> name.value);
     strconcat(&func_body, ":\n");
     strconcat(&func_body, "    push rbp\n");
     strconcat(&func_body, "    mov rbp, rsp\n");
+    lqdCompilerContext* cc = ctx;
+    while (cc -> is_child_ctx) cc = cc -> parent_ctx;
+    char id = ++cc -> child_contexts;
+    char* id_as_str = malloc(12);
+    sprintf(id_as_str, "%i", id);
     lqdStatementsNode* stmnts = lqdStatementsNode_new(1);
     lqdStatementsNode_push(stmnts, node -> statement);
     char* code;
     if (node -> statement.type == NT_Statements) {
-        lqdCompilerContext* child_ctx = create_context(ctx -> code, ctx -> filename, 1, 2);
+        lqdCompilerContext* child_ctx = create_context(ctx -> code, ctx -> filename, 1, id);
+        child_ctx -> is_lib = ctx -> is_lib;
+        if (ctx -> is_lib) {
+            child_ctx -> lib_name = malloc(strlen(ctx -> lib_name) + 1);
+            strcpy(child_ctx -> lib_name, ctx -> lib_name);
+        }
+        for (uint64_t i = 0; i < node -> params -> values; i++) {
+            strconcat(get_glob_section_bss(ctx), node -> params -> params[i].name.value);
+            strconcat(get_glob_section_bss(ctx), id_as_str);
+            strconcat(get_glob_section_bss(ctx), ": resq 1\n");
+
+            char* tmp = malloc(8);
+            sprintf(tmp, "%li", (i + 2) * 8);
+            strconcat(&func_body, "    mov rax, [rbp+");
+            strconcat(&func_body, tmp);
+            strconcat(&func_body, "]\n");
+            free(tmp);
+            strconcat(&func_body, "    mov [");
+            strconcat(&func_body, node -> params -> params[i].name.value);
+            strconcat(&func_body, id_as_str);
+            strconcat(&func_body, "], rax\n");
+
+            define_var(child_ctx, node -> params -> params[i].name.value, "undefined", 1);
+        }
+        free(id_as_str);
+        lqdStatementsNode* _stmnts = lqdStatementsNode_new(1);
+        lqdStatementsNode_push(_stmnts, node -> statement);
         child_ctx -> parent_ctx = ctx;
-        code = x86_64_compile_statements(stmnts, child_ctx);
+        code = x86_64_compile_statements(_stmnts, child_ctx, NULL);
         delete_context(child_ctx);
+        free(_stmnts -> statements);
+        free(_stmnts);
     } else {
-        code = x86_64_compile_statements(stmnts, ctx);
+        lqdCompilerError(ctx, node -> name.line, node -> name.idx_start, node -> name.idx_end, "Function body must be a multi-line statement!");
     }
     free(stmnts -> statements);
     free(stmnts);
@@ -511,61 +703,37 @@ char* x86_64_Statements(lqdStatementsNode* node, lqdCompilerContext* ctx) {
     char* statements_body = malloc(1);
     statements_body[0] = 0;
     for (int i = 0; i < node -> values; i++) {
-        char* stmnt = x86_64_compile_stmnt(node -> statements[i], ctx, 0);
+        char* stmnt = x86_64_compile_stmnt(node -> statements[i], ctx);
         strconcat(&statements_body, stmnt);
         free(stmnt);
     }
     return statements_body;
 };
 char* x86_64_FuncCall(lqdFuncCallNode* node, lqdCompilerContext* ctx) {
-    lqdchar found = -1;
-    lqdchar is_nested = 0;
-    lqdCompilerContext* current_ctx = ctx;
-    if (!ctx -> is_child_ctx) {
-        for (int i = 0; i < ctx -> defined_funcs_vals; i++)
-            if (!strcmp(node -> call_path -> tokens[0].value, ctx -> defined_funcs[i]))
-                found = i;
-    } else {
-        is_nested = 1;
-        while (current_ctx -> is_child_ctx) {
-            for (int i = 0; i < current_ctx -> defined_funcs_vals; i++)
-                if (!strcmp(node -> call_path -> tokens[0].value, current_ctx -> defined_funcs[i]))
-                    found = i;
-            if (found == -1) {
-                current_ctx = (lqdCompilerContext*) current_ctx -> parent_ctx;
-                if (!current_ctx -> is_child_ctx) {
-                    is_nested = 0;
-                    for (int i = 0; i < current_ctx -> defined_funcs_vals; i++)
-                        if (!strcmp(node -> call_path -> tokens[0].value, current_ctx -> defined_funcs[i]))
-                            found = i;
-                }
-            } else {
-                break;
-            }
-        }
-    }
+    char found = is_defined_func(ctx, node -> call_path);
+    char is_nested = found == 2;
+    char is_extern = found == 3;
     if (found == -1)
-        lqdCompilerError(ctx, node -> call_path -> tokens[0].line, node -> call_path -> tokens[0].idx_start, node -> call_path -> tokens[0].idx_end, "Undefined function!");
-    if (node -> args -> values != current_ctx -> func_params[(int)found] -> values)
-        lqdCompilerError(ctx, node -> call_path -> tokens[0].line, node -> call_path -> tokens[0].idx_start, node -> call_path -> tokens[0].idx_end, "Invalid number of arguments!");
-    /* TODO: This.
-    for (uint64_t i = 0; i < node -> args -> values; i++) {
-        // TODO: Point to which argument specifically
-        if (get_type(node -> args -> statements[i]) != current_ctx -> func_params[(int)found] -> params[i].type)
-            lqdCompilerError(ctx, node -> call_path -> tokens[0].line, node -> call_path -> tokens[0].idx_start, node -> call_path -> tokens[0].idx_end, "Invalid argument types!"); 
-    }
-    */
+        lqdCompilerError(ctx, node -> call_path -> tokens[0].line, node -> call_path -> tokens[0].idx_start, node -> call_path -> tokens[node -> call_path -> values - 1].idx_end, "Undefined function!");
     char* call_body = malloc(1);
     call_body[0] = 0;
     for (int i = node -> args -> values - 1; i >= 0; i--) {
-        char* tmp = x86_64_compile_stmnt(node -> args -> statements[i], ctx, 0);
+        char* tmp = x86_64_compile_stmnt(node -> args -> statements[i], ctx);
         strconcat(&call_body, tmp);
         free(tmp);
     }
     strconcat(&call_body, "    call ");
     if (is_nested)
         strconcat(&call_body, ".");
-    strconcat(&call_body, node -> call_path -> tokens[0].value);
+    if (ctx -> is_lib && !is_extern) {
+        strconcat(&call_body, ctx -> lib_name);
+        strconcat(&call_body, "_");
+    }
+    for (int i = 0; i < node -> call_path -> values; i++) {
+        strconcat(&call_body, node -> call_path -> tokens[i].value);
+        if (i != node -> call_path -> values - 1)
+            strconcat(&call_body, "_");
+    }
     strconcat(&call_body, "\n");
     return call_body;
 };
@@ -584,7 +752,7 @@ char* x86_64_If(lqdIfNode* node, lqdCompilerContext* ctx) {
         sprintf(tmp2, "%i", i);
         strconcat(&if_body, tmp2);
         strconcat(&if_body, ":\n");
-        char* tmp3 = x86_64_compile_stmnt(node -> conditions -> statements[i], ctx, 0);
+        char* tmp3 = x86_64_compile_stmnt(node -> conditions -> statements[i], ctx);
         strconcat(&if_body, tmp3);
         strconcat(&if_body, "    pop rax\n");
         strconcat(&if_body, "    cmp rax, 1\n");
@@ -595,7 +763,7 @@ char* x86_64_If(lqdIfNode* node, lqdCompilerContext* ctx) {
         strconcat(&if_body, tmp2);
         strconcat(&if_body, "\n");
         free(tmp3);
-        tmp3 = x86_64_compile_stmnt(node -> bodies -> statements[i], ctx, 0);
+        tmp3 = x86_64_compile_stmnt(node -> bodies -> statements[i], ctx);
         strconcat(&if_body, tmp3);
         strconcat(&if_body, "    jmp .if_");
         strconcat(&if_body, tmp);
@@ -612,7 +780,7 @@ char* x86_64_If(lqdIfNode* node, lqdCompilerContext* ctx) {
     strconcat(&if_body, tmp2);
     strconcat(&if_body, ":\n");
     if (node -> has_else_case) {
-        char* else_case = x86_64_compile_stmnt(node -> else_case, ctx, 0);
+        char* else_case = x86_64_compile_stmnt(node -> else_case, ctx);
         strconcat(&if_body, else_case);
         free(else_case);
     }
@@ -627,8 +795,8 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
     int exists = 0;
     lqdCompilerContext* current_ctx = ctx;
     while (current_ctx -> is_child_ctx) {
-        for (uint64_t i = 0; i < current_ctx -> defined_vars_vals; i++)
-            if (!strcmp(current_ctx -> defined_vars[i], node -> arr -> tokens[0].value)) {
+        for (uint64_t i = 0; i < current_ctx -> namespace -> defined_vars_vals; i++)
+            if (!strcmp(current_ctx -> namespace -> defined_vars[i], node -> arr -> tokens[0].value)) {
                 exists = 1;
             }
         if (!exists) {
@@ -641,13 +809,23 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
         lqdCompilerError(ctx, node -> arr -> tokens[0].line, node -> arr -> tokens[0].idx_start, node -> arr -> tokens[node -> arr -> values-1].idx_end, "Undefined array!");
     char* for_body = malloc(1);
     for_body[0] = 0;
-    char* tmp = malloc(8);
+    char* tmp = malloc(20);
     sprintf(tmp, "%li", ctx -> comparison++);
+    char* tmp2 = malloc(20);
+    sprintf(tmp2, "%i", ctx -> id + 1);
     strconcat(get_glob_section_bss(ctx), "    ");
     strconcat(get_glob_section_bss(ctx), node -> iterator.value);
+    strconcat(get_glob_section_bss(ctx), tmp2);
     strconcat(get_glob_section_bss(ctx), ": resq 1\n");
     strconcat(&for_body, "    mov rax, [");
+    char id = is_defined(ctx, node -> arr -> tokens[0].value);
+    if (!id)
+        lqdCompilerError(ctx, node -> arr -> tokens[0].line, node -> arr -> tokens[0].idx_start, node -> arr -> tokens[0].idx_end, "Array not defined!");
+    char* tmp3 = malloc(8);
+    sprintf(tmp3, "%i", id);
     strconcat(&for_body, node -> arr -> tokens[0].value);
+    strconcat(&for_body, tmp3);
+    free(tmp3);
     strconcat(&for_body, "]\n");
     strconcat(&for_body, "    mov r8, [rax]\n");
     strconcat(&for_body, "    lea r9, [rax+16]\n");
@@ -661,18 +839,22 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
     strconcat(&for_body, "    mov r10, [r9]\n");
     strconcat(&for_body, "    mov [");
     strconcat(&for_body, node -> iterator.value);
+    strconcat(&for_body, tmp2);
+    free(tmp2);
     strconcat(&for_body, "], r10\n");
     lqdStatementsNode* stmnts = lqdStatementsNode_new(1);
     lqdStatementsNode_push(stmnts, node -> body);
     char* code;
     if (node -> body.type == NT_Statements) {
-        lqdCompilerContext* child_ctx = create_context(ctx -> code, ctx -> filename, 1, 0);
+        lqdCompilerContext* cc = ctx;
+        while (cc -> is_child_ctx) cc = cc -> parent_ctx;
+        lqdCompilerContext* child_ctx = create_context(ctx -> code, ctx -> filename, 1, ++cc -> child_contexts);
         define_var(child_ctx, node -> iterator.value, "undefined", 1); // TODO: yk
         child_ctx -> parent_ctx = ctx;
-        code = x86_64_compile_statements(stmnts, child_ctx);
+        code = x86_64_compile_statements(stmnts, child_ctx, NULL);
         delete_context(child_ctx);
     } else {
-        code = x86_64_compile_statements(stmnts, ctx);
+        code = x86_64_compile_statements(stmnts, ctx, NULL);
     }
     free(stmnts -> statements);
     free(stmnts);
@@ -687,6 +869,7 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
     strconcat(&for_body, tmp);
     strconcat(&for_body, "_end:\n");
     free(tmp);
+    free(code);
     return for_body;
 };
 char* x86_64_While(lqdWhileNode* node, lqdCompilerContext* ctx) {
@@ -701,13 +884,13 @@ char* x86_64_While(lqdWhileNode* node, lqdCompilerContext* ctx) {
     strconcat(&while_body, ".while_");
     strconcat(&while_body, tmp);
     strconcat(&while_body, ":\n");
-    char* tmp2 = x86_64_compile_stmnt(node -> body, ctx, 0);
+    char* tmp2 = x86_64_compile_stmnt(node -> body, ctx);
     strconcat(&while_body, tmp2);
     free(tmp2);
     strconcat(&while_body, ".while_");
     strconcat(&while_body, tmp);
     strconcat(&while_body, "_end:\n");
-    tmp2 = x86_64_compile_stmnt(node -> condition, ctx, 0);
+    tmp2 = x86_64_compile_stmnt(node -> condition, ctx);
     strconcat(&while_body, tmp2);
     strconcat(&while_body, "    pop rax\n");
     strconcat(&while_body, "    cmp rax, 1\n");
@@ -722,32 +905,11 @@ char* x86_64_Struct(lqdStructNode* node, lqdCompilerContext* ctx) {
     return "";
 };
 char* x86_64_VarReassign(lqdVarReassignNode* node, lqdCompilerContext* ctx) {
-    int var_idx = 0;
-    int var_idx_real = 0;
-    lqdchar is_bottom = 1;
-    lqdCompilerContext* current_ctx = ctx;
-    while (current_ctx -> is_child_ctx) { /* TODO: Clean up this loop */
-        for (uint64_t i = 0; i < current_ctx -> defined_vars_vals; i++)
-            if (!strcmp(current_ctx -> defined_vars[i], node -> var -> tokens[0].value)) {
-                var_idx = 1;
-                var_idx_real += (int) i;
-            }
-        if (!var_idx) {
-            var_idx_real -= ctx -> header;
-            if (ctx -> header && is_bottom) {
-                var_idx_real--;
-                is_bottom = 0;
-            }
-            current_ctx = current_ctx -> parent_ctx;
-        } else {
-            break;
-        }
-    }
-    if (!var_idx)
+    if (!is_defined(ctx, node -> var -> tokens[0].value))
         lqdCompilerError(ctx, node -> var -> tokens[0].line, node -> var -> tokens[0].idx_start, node -> var -> tokens[node -> var -> values-1].idx_end, "Undefined variable!");
     char* var_reassign = malloc(1);
     var_reassign[0] = 0;
-    char* tmp2 = x86_64_compile_stmnt(node -> value, ctx, 0);
+    char* tmp2 = x86_64_compile_stmnt(node -> value, ctx);
     strconcat(&var_reassign, tmp2);
     free(tmp2);
     strconcat(&var_reassign, "    pop rax\n");
@@ -769,10 +931,66 @@ char* x86_64_Construct(lqdConstructorNode* node, lqdCompilerContext* ctx) {
     return "";
 };
 char* x86_64_Employ(lqdEmployNode* node, lqdCompilerContext* ctx) {
-    return "";
+    char* employee = malloc(1);
+    employee[0] = 0;
+    char* path = malloc(256);
+    path[0] = 0;
+    strconcat(&path, "./");
+    for (uint64_t i = 0; i < node -> lib_path -> values; i++) {
+        strconcat(&path, node -> lib_path -> tokens[i].value);
+        if (i != node -> lib_path -> values - 1)
+            strconcat(&path, "/");
+    }
+    strconcat(&path, ".lqd");
+    // Code above turns something like "some.folder.some.lib" into "./some/folder/some/lib.lqd"
+    char* code = malloc(2);
+    uint64_t code_len = 0;
+    uint64_t code_max = 2;
+    FILE* file = fopen(path, "r");
+    if (file == NULL)
+        lqdCompilerError(ctx, node -> lib_path -> tokens[0].line, node -> lib_path -> tokens[0].idx_start, node -> lib_path -> tokens[0].idx_end, "Library not found!");
+    lqdchar ch;
+    do {
+        if (code_len == code_max) {
+            code_max *= 2;
+            code = realloc(code, code_max);
+            if (code == NULL) {
+                fprintf(stderr, "Not enough memory to load file!\n");
+                exit(1);
+            }
+        }
+        ch = fgetc(file);
+        code[code_len++] = ch;
+    } while(ch != EOF);
+    code = realloc(code, code_max + 1);
+    code[--code_len] = 0;
+    lqdTokenArray* tokens = tokenize(code, path);
+    lqdStatementsNode* AST = parse(tokens, code, path);
+    lqdCompilerContext* nctx = create_context(code, path, 0, ++ctx -> child_contexts);
+    nctx -> lib_name = malloc(strlen(node -> is_aliased ? node -> alias.value : node -> lib_path -> tokens[node -> lib_path -> values - 1].value) + 1);
+    strcpy(nctx -> lib_name, node -> is_aliased ? node -> alias.value : node -> lib_path -> tokens[node -> lib_path -> values - 1].value);
+    nctx -> is_lib = 1;
+    char* new_code = x86_64_compile_statements(AST, nctx, node -> is_aliased ? node -> alias.value : node -> lib_path -> tokens[node -> lib_path -> values - 1].value);
+    strconcat(&employee, new_code);
+    free(new_code);
+    free(path);
+    fclose(file);
+
+    define_lib(ctx, node -> is_aliased ? node -> alias.value : node -> lib_path -> tokens[node -> lib_path -> values - 1].value);
+    for (int i = 0; i < nctx -> namespace -> defined_funcs_vals; i++) {
+        define_func(ctx -> namespace -> libraries[ctx -> namespace -> libraries_vals - 1], nctx -> namespace -> defined_funcs[i], nctx -> namespace -> func_params[i], nctx -> namespace -> is_extern_func[i]);
+    }
+
+    strconcat(get_glob_section_bss(ctx), *get_glob_section_bss(nctx));
+    ctx -> child_contexts += ctx -> child_contexts - nctx -> child_contexts + 1;
+    delete_context(nctx);
+    free(code);
+    lqdTokenArray_delete(tokens);
+    lqdStatementsNode_delete(AST);
+    return employee;
 };
 
-char* x86_64_compile_statements(lqdStatementsNode* statements, lqdCompilerContext* ctx) {
+char* x86_64_compile_statements(lqdStatementsNode* statements, lqdCompilerContext* ctx, char* namespace) {
     char* section_text = malloc(1);
     section_text[0] = 0;
     for (uint64_t i = 0; i < statements -> values; i++) {
@@ -820,13 +1038,13 @@ char* x86_64_compile_statements(lqdStatementsNode* statements, lqdCompilerContex
                 strconcat(&section_text, x86_64_Unary((lqdUnaryOpNode*)statements -> statements[i].node, ctx));
                 break;
             case NT_VarDecl: {
-                char* var_decl = x86_64_VarDecl((lqdVarDeclNode*)statements -> statements[i].node, ctx);
+                char* var_decl = x86_64_VarDecl((lqdVarDeclNode*)statements -> statements[i].node, ctx, namespace);
                 strconcat(&section_text, var_decl);
                 free(var_decl);
                 break;
             }
             case NT_FuncDecl: {
-                char* decl = x86_64_FuncDecl((lqdFuncDeclNode*)statements -> statements[i].node, ctx);
+                char* decl = x86_64_FuncDecl((lqdFuncDeclNode*)statements -> statements[i].node, ctx, namespace);
                 strconcat(&section_text, decl);
                 free(decl);
                 break;
@@ -838,7 +1056,7 @@ char* x86_64_compile_statements(lqdStatementsNode* statements, lqdCompilerContex
                 break;
             }
             case NT_FuncCall: {
-                /* TODO: dynamic calling comvention*/
+                /* TODO: dynamic calling convention*/
                 char* call = x86_64_FuncCall((lqdFuncCallNode*)statements -> statements[i].node, ctx);
                 strconcat(&section_text, call);
                 free(call);
@@ -850,9 +1068,12 @@ char* x86_64_compile_statements(lqdStatementsNode* statements, lqdCompilerContex
                 free(if_body);
                 break;
             }
-            case NT_For:
-                strconcat(&section_text, x86_64_For((lqdForNode*)statements -> statements[i].node, ctx));
+            case NT_For: {
+                char* for_body = x86_64_For((lqdForNode*)statements -> statements[i].node, ctx);
+                strconcat(&section_text, for_body);
+                free(for_body);
                 break;
+            }
             case NT_While: {
                 char* while_body = x86_64_While((lqdWhileNode*)statements -> statements[i].node, ctx);
                 strconcat(&section_text, while_body);
@@ -862,7 +1083,7 @@ char* x86_64_compile_statements(lqdStatementsNode* statements, lqdCompilerContex
             case NT_Struct:
                 strconcat(&section_text, x86_64_Struct((lqdStructNode*)statements -> statements[i].node, ctx));
                 break;
-            case NT_VarReassign: {
+            case NT_VarReassign: { // lib
                 char* reassign_body = x86_64_VarReassign((lqdVarReassignNode*)statements -> statements[i].node, ctx);
                 strconcat(&section_text, reassign_body);
                 free(reassign_body);
@@ -880,9 +1101,12 @@ char* x86_64_compile_statements(lqdStatementsNode* statements, lqdCompilerContex
             case NT_Construct:
                 strconcat(&section_text, x86_64_Construct((lqdConstructorNode*)statements -> statements[i].node, ctx));
                 break;
-            case NT_Employ:
-                strconcat(&section_text, x86_64_Employ((lqdEmployNode*)statements -> statements[i].node, ctx));
+            case NT_Employ: {
+                char* employee = x86_64_Employ((lqdEmployNode*)statements -> statements[i].node, ctx);
+                strconcat(&section_text, employee);
+                free(employee);
                 break;
+            }
             default:
                 break;
         }
@@ -895,7 +1119,7 @@ char* x86_64_compile(lqdStatementsNode* statements, char* code, char* filename) 
     lqdCompilerContext* ctx = create_context(code, filename, 0, 0);
     section_text[0] = 0;
     
-    char* _code = x86_64_compile_statements(statements, ctx);
+    char* _code = x86_64_compile_statements(statements, ctx, NULL);
     strconcat(&section_text, _code);
     free(_code);
 

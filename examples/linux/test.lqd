@@ -1,11 +1,5 @@
-// Testing file, not really an example
-extern putc(chr char);
+employ std.io -> stdio;
 
 fn main() {
-    arr string = "Hello, world!\n";
-    num i = 0;
-    while i < string[-2] {
-        putc(string[i]);
-        i = i + 1;
-    }
+    stdio.println("Hello, world!");
 }
