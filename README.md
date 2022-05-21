@@ -27,23 +27,6 @@ $ ./helloworld
 Hello, world!
 $
 ```
-## Windows
-To compile on windows you're gonna need these chocolatey packages:
- - nasm
- - visualstudio2017buildtools
- - visualstudio2017-workload-vctools<br/>
-Once you've got these, you're gonna create a file called `vcexec.bat`<br/>
-in this file put:
-```
-call "C:\\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" amd64 %*
-```
-Then run `nasm .\examples\windows\console.asm -o console.o -fwin64`
-<br/><br/>
-Alright now you're ready to start compiling some programs!<br/>
-You can (mostly) follow the steps above.
-But to compile a lyqd program on windows you're gonna have to do it manually:<br/>
-`.\bin\clyqd.exe .\examples\linux\test.lqd`<br/><br/>
-`powershell -Command "~\\vsexec.bat link /entry:start /subsystem:console a.o console.o kernel32.lib"`<br/>
 # Compiling seawater
 ## Dependencies
 * Preffered C compiler
