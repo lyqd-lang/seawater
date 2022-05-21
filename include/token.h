@@ -15,6 +15,7 @@ typedef enum {
     TT_SUB,
     TT_MUL,
     TT_DIV,
+    TT_MOD,
 
     /* Parentheses */
     TT_LPAREN,

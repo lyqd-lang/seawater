@@ -50,6 +50,10 @@ lqdTokenArray* tokenize(char* code, char* filename) {
                 lqdTokenArray_push(tokens, lqdToken_new(TT_MUL, NULL, idx, idx, line));
                 idx++;
                 break;
+            case '%':
+                lqdTokenArray_push(tokens, lqdToken_new(TT_MOD, NULL, idx, idx, line));
+                idx++;
+                break;
             case '/':
                 if (code[idx+1] == '/') {
                     while (code[idx] != '\n')idx++;

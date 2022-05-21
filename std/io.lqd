@@ -1,4 +1,8 @@
-extern putc(chr char);
+extern __x86_64_clyqd_putc(chr byte);
+
+fn putc(chr char) {
+    __x86_64_clyqd_putc(char);
+}
 
 fn puts(str string) {
     for i in string {
@@ -9,4 +13,22 @@ fn puts(str string) {
 fn println(str string) {
     puts(string);
     putc(10);
+}
+
+fn putn(num number) {
+    str string = "            "; // "allocate" 12 bytes, enough to store a 32bit integer
+    num pos = 0;
+    str nums = "0123456789";
+    while number > 0 {
+        string[pos] = nums[number % 10];
+        number = number / 10;
+        pos = pos + 1;
+    }
+    num i = 11;
+    while i > -1 {
+        if string[i] != ' ' {
+            putc(string[i]);
+        }
+        i = i - 1;
+    }
 }

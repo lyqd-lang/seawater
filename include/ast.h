@@ -149,6 +149,8 @@ typedef struct {
 typedef struct {
     lqdTokenArray* var;
     lqdASTNode value;
+    lqdASTNode slice;
+    char has_slice;
 } lqdVarReassignNode;
 
 typedef struct {

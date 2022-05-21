@@ -47,6 +47,11 @@ typedef struct {
     char is_lib;
     char* lib_name;
 
+    char* for_end;
+    char* while_end;
+    char* true_for_end;
+    char* true_while_end;
+
     uint64_t comparison;
 } lqdCompilerContext;
 
@@ -534,6 +539,13 @@ char* x86_64_BinOp(lqdBinOpNode* node, lqdCompilerContext* ctx) {
             strconcat(&binop, "    idiv rbx\n");
             strconcat(&binop, "    xchg rax, rbx\n");
             break;
+        case TT_MOD:
+            // TODO: Use runtime implementation
+            strconcat(&binop, "    xchg rax, rbx\n");
+            strconcat(&binop, "    xor rdx, rdx\n");
+            strconcat(&binop, "    idiv rbx\n");
+            strconcat(&binop, "    mov rbx, rdx\n");
+            break;
         default:
             strconcat(&binop, "    cmp rbx, rax\n");
             switch (node -> op.type) {
@@ -559,7 +571,9 @@ char* x86_64_BinOp(lqdBinOpNode* node, lqdCompilerContext* ctx) {
                     break;
             }
             char* tmp = malloc(8);
-            sprintf(tmp, "%li", ctx -> comparison++);
+            lqdCompilerContext* cc = ctx;
+            while (cc -> is_child_ctx && ((lqdCompilerContext*) ctx -> parent_ctx) -> is_child_ctx) cc = cc -> parent_ctx;
+            sprintf(tmp, "%li", cc -> comparison++);
             strconcat(&binop, tmp);
             strconcat(&binop, "\n    jmp .cmp_fail");
             strconcat(&binop, tmp);
@@ -657,6 +671,7 @@ char* x86_64_FuncDecl(lqdFuncDeclNode* node, lqdCompilerContext* ctx, char* name
             strcpy(child_ctx -> lib_name, ctx -> lib_name);
         }
         for (uint64_t i = 0; i < node -> params -> values; i++) {
+            strconcat(get_glob_section_bss(ctx), "    ");
             strconcat(get_glob_section_bss(ctx), node -> params -> params[i].name.value);
             strconcat(get_glob_section_bss(ctx), id_as_str);
             strconcat(get_glob_section_bss(ctx), ": resq 1\n");
@@ -849,9 +864,17 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
         lqdCompilerContext* cc = ctx;
         while (cc -> is_child_ctx) cc = cc -> parent_ctx;
         lqdCompilerContext* child_ctx = create_context(ctx -> code, ctx -> filename, 1, ++cc -> child_contexts);
+        child_ctx -> is_lib = ctx -> is_lib;
+        child_ctx -> lib_name = ctx -> lib_name;
+        child_ctx -> for_end = malloc(100);
+        sprintf(child_ctx -> for_end, ".for_%li_end", ctx -> comparison - 1);
         define_var(child_ctx, node -> iterator.value, "undefined", 1); // TODO: yk
         child_ctx -> parent_ctx = ctx;
         code = x86_64_compile_statements(stmnts, child_ctx, NULL);
+        free(child_ctx -> for_end);
+        child_ctx -> for_end = NULL;
+        child_ctx -> is_lib = 0;
+        child_ctx -> lib_name = NULL;
         delete_context(child_ctx);
     } else {
         code = x86_64_compile_statements(stmnts, ctx, NULL);
@@ -884,7 +907,11 @@ char* x86_64_While(lqdWhileNode* node, lqdCompilerContext* ctx) {
     strconcat(&while_body, ".while_");
     strconcat(&while_body, tmp);
     strconcat(&while_body, ":\n");
+    ctx -> while_end = malloc(100);
+    sprintf(ctx -> while_end, ".while_%li_end", ctx -> comparison - 1);
     char* tmp2 = x86_64_compile_stmnt(node -> body, ctx);
+    free(ctx -> while_end);
+    ctx -> while_end = NULL;
     strconcat(&while_body, tmp2);
     free(tmp2);
     strconcat(&while_body, ".while_");
@@ -901,21 +928,35 @@ char* x86_64_While(lqdWhileNode* node, lqdCompilerContext* ctx) {
     free(tmp);
     return while_body;
 };
-char* x86_64_Struct(lqdStructNode* node, lqdCompilerContext* ctx) {
-    return "";
-};
 char* x86_64_VarReassign(lqdVarReassignNode* node, lqdCompilerContext* ctx) {
-    if (!is_defined(ctx, node -> var -> tokens[0].value))
+    int id = is_defined(ctx, node -> var -> tokens[0].value);
+    if (!id)
         lqdCompilerError(ctx, node -> var -> tokens[0].line, node -> var -> tokens[0].idx_start, node -> var -> tokens[node -> var -> values-1].idx_end, "Undefined variable!");
     char* var_reassign = malloc(1);
     var_reassign[0] = 0;
     char* tmp2 = x86_64_compile_stmnt(node -> value, ctx);
     strconcat(&var_reassign, tmp2);
     free(tmp2);
-    strconcat(&var_reassign, "    pop rax\n");
-    strconcat(&var_reassign, "    mov [");
+    strconcat(&var_reassign, "    pop rdi\n");
+    strconcat(&var_reassign, "    mov rbx, ");
+    char* tmp = malloc(12);
+    sprintf(tmp, "%i", id);
     strconcat(&var_reassign, node -> var -> tokens[0].value);
-    strconcat(&var_reassign, "], rax\n");
+    strconcat(&var_reassign, tmp);
+    free(tmp);
+    strconcat(&var_reassign, "\n");
+    if (node -> has_slice) {
+        strconcat(&var_reassign, "    mov rsi, [rbx]\n");
+        char* tmp = x86_64_compile_stmnt(node -> slice, ctx);
+        strconcat(&var_reassign, tmp);
+        strconcat(&var_reassign, "    pop rax\n");
+        strconcat(&var_reassign, "    xor rdx, rdx\n");
+        strconcat(&var_reassign, "    mov rcx, 8\n");
+        strconcat(&var_reassign, "    imul rcx\n");
+        strconcat(&var_reassign, "    lea rbx, [rsi+16+rax]\n");    
+        free(tmp);
+    }
+    strconcat(&var_reassign, "    mov [rbx], rdi\n");
     return var_reassign;
 };
 char* x86_64_Return(lqdReturnNode* node, lqdCompilerContext* ctx) {
@@ -928,6 +969,9 @@ char* x86_64_Break(lqdBreakNode* node, lqdCompilerContext* ctx) {
     return "";
 };
 char* x86_64_Construct(lqdConstructorNode* node, lqdCompilerContext* ctx) {
+    return "";
+};
+char* x86_64_Struct(lqdStructNode* node, lqdCompilerContext* ctx) {
     return "";
 };
 char* x86_64_Employ(lqdEmployNode* node, lqdCompilerContext* ctx) {

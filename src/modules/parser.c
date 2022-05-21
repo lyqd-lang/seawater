@@ -270,6 +270,16 @@ lqdASTNode statement(lqdParserCtx* ctx) {
             lqdTokenArray_push(call_path, ctx -> tok);
             advance(ctx);
         } while (ctx -> tok.type == TT_PERIOD);
+        char has_slice = 0;
+        lqdASTNode slice;
+        if (ctx -> tok.type == TT_LBRACKET) {
+            has_slice = 1;
+            advance(ctx);
+            slice = expr(ctx);
+            if (ctx -> tok.type != TT_RBRACKET)
+                lqdSyntaxError(ctx, "Expected ']'");
+            advance(ctx);
+        }
         if (ctx -> tok.type == TT_EQ) {
             advance(ctx);
             lqdASTNode value = expr(ctx);
@@ -279,6 +289,8 @@ lqdASTNode statement(lqdParserCtx* ctx) {
             lqdVarReassignNode* reassign = malloc(sizeof(lqdVarReassignNode));
             reassign -> var = call_path;
             reassign -> value = value;
+            reassign -> has_slice = has_slice;
+            reassign -> slice = slice;
             lqdASTNode node = {NT_VarReassign, reassign};
             return node;
         }
@@ -302,9 +314,19 @@ lqdASTNode statement(lqdParserCtx* ctx) {
         lqdASTNode node = {NT_FuncCall, func_call};
         return node;
     } else if (ctx -> tok.type == TT_IDEN) {
+        char has_slice = 0;
+        lqdASTNode slice;
+        lqdTokenArray* var_path = lqdTokenArray_new(1);
+        lqdTokenArray_push(var_path, ctx -> tok);
+        if (peek(ctx).type == TT_LBRACKET) {
+            advance(ctx);
+            has_slice = 1;
+            advance(ctx);
+            slice = expr(ctx);
+            if (ctx -> tok.type != TT_RBRACKET)
+                lqdSyntaxError(ctx, "Expected ']'");
+        }
         if (peek(ctx).type == TT_EQ) {
-            lqdTokenArray* var_path = lqdTokenArray_new(1);
-            lqdTokenArray_push(var_path, ctx -> tok);
             advance(ctx);
             advance(ctx);
             lqdASTNode new_value = expr(ctx);
@@ -313,6 +335,8 @@ lqdASTNode statement(lqdParserCtx* ctx) {
             lqdVarReassignNode* reassign = malloc(sizeof(lqdVarReassignNode));
             reassign -> var = var_path;
             reassign -> value = new_value;
+            reassign -> has_slice = has_slice;
+            reassign -> slice = slice;
             lqdASTNode node = {NT_VarReassign, reassign};
             return node;
         }
@@ -524,7 +548,7 @@ lqdASTNode factor(lqdParserCtx* ctx) {
 
 lqdASTNode term(lqdParserCtx* ctx) {
     lqdASTNode left = factor(ctx);
-    while (ctx -> tok.type == TT_MUL || ctx -> tok.type == TT_DIV) {
+    while (ctx -> tok.type == TT_MUL || ctx -> tok.type == TT_DIV || ctx -> tok.type == TT_MOD) {
         lqdToken op = ctx -> tok;
         advance(ctx);
         lqdASTNode right = factor(ctx);

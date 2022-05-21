@@ -2,8 +2,8 @@ section .bss
     tmp_str: resb 1
 
 section .text
-global putc
-putc:
+global __x86_64_clyqd_putc
+__x86_64_clyqd_putc:
     mov rax, [rsp + 8]
     mov [tmp_str], rax
     mov rax, 1
