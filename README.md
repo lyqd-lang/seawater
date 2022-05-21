@@ -28,10 +28,10 @@ Hello, world!
 $
 ```
 ## Windows
-To compile on windows you're gonna need hese chocolatey packages:
+To compile on windows you're gonna need these chocolatey packages:
  - nasm
  - visualstudio2017buildtools
- - visualstudio2017-workload-vctools
+ - visualstudio2017-workload-vctools<br/>
 Once you've got these, you're gonna create a file called `vcexec.bat`<br/>
 in this file put:
 ```
