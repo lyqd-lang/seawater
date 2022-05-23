@@ -102,9 +102,22 @@ class Compiler:
             print(" ".join([self.compiler, "-Iinclude/", "-fsanitize=undefined,address", "-g3", "-Wall", "-Werror", "-c", "-o", f"build/{file.replace('.c','.o')}", "src/compilers/" + file]))
             proc = subprocess.run([self.compiler, "-Iinclude/", "-fsanitize=undefined,address", "-g3", "-Wall", "-Werror", "-c", "-o", f"build/{file.replace('.c','.o')}", "src/compilers/" + file])
             if proc.returncode != 0:exit(1)
-        print(" ".join([self.compiler, "src/main.c", "-Iinclude/", "-fsanitize=undefined,address", "-g3", "-Wall", "-Werror", "-o", f"bin/lyqd_debug{'.exe' if self.os == 'windows' else ''}", *["build/" + x for x in os.listdir("build")]]))
-        proc = subprocess.run([self.compiler, "src/main.c", "-Iinclude/", "-fsanitize=undefined,address", "-g3", "-Wall", "-Werror", "-o", f"bin/lyqd_debug{'.exe' if self.os == 'windows' else ''}", *["build/" + x for x in os.listdir("build")]])
+        print(" ".join([self.compiler, "src/main.c", "-Iinclude/", "-fsanitize=undefined,address", "-g3", "-Wall", "-Werror", "-o", f"bin/clyqd_debug{'.exe' if self.os == 'windows' else ''}", *["build/" + x for x in os.listdir("build")]]))
+        proc = subprocess.run([self.compiler, "src/main.c", "-Iinclude/", "-fsanitize=undefined,address", "-g3", "-Wall", "-Werror", "-o", f"bin/clyqd_debug{'.exe' if self.os == 'windows' else ''}", *["build/" + x for x in os.listdir("build")]])
         if proc.returncode != 0:exit(1)
+
+    def compile_runtime(self):
+        if not os.path.exists("build"):
+            os.mkdir("build")
+        if not os.path.exists("bin"):
+            os.mkdir("bin")
+        if not os.path.exists("bin/runtime"):
+            os.mkdir("bin/runtime")
+        if self.os == "windows":
+            subprocess.run(["nasm", "-fwin64", "src/runtime/win.asm", "-o", "bin/runtime/runtime.o"])
+        else:
+            subprocess.run(["nasm", "-felf64", "src/runtime/penguin.asm", "-o", "bin/runtime/runtime.o"])
+
 
 def parse_args():
     ap = argparse.ArgumentParser(description="Compile clyqd")
@@ -126,6 +139,7 @@ def main():
     compiler.compile()
     if args.debug:
         compiler.compile_debug()
+    compiler.compile_runtime()
 
 if __name__ == "__main__":
     main()

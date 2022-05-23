@@ -53,6 +53,8 @@ typedef struct {
     char* true_while_end;
 
     uint64_t comparison;
+
+    char returns;
 } lqdCompilerContext;
 
 lqdCompilerContext* create_context(char* code, char* filename, char is_child, uint64_t id) {
@@ -847,7 +849,7 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
     strconcat(&for_body, "    cmp r8, 0\n");
     strconcat(&for_body, "    je .for_");
     strconcat(&for_body, tmp);
-    strconcat(&for_body, "_end\n");
+    strconcat(&for_body, "_true_end\n");
     strconcat(&for_body, ".for_");
     strconcat(&for_body, tmp);
     strconcat(&for_body, ":\n");
@@ -868,11 +870,15 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
         child_ctx -> lib_name = ctx -> lib_name;
         child_ctx -> for_end = malloc(100);
         sprintf(child_ctx -> for_end, ".for_%li_end", ctx -> comparison - 1);
+        child_ctx -> for_end = malloc(100);
+        sprintf(child_ctx -> for_end, ".for_%li_true_end", ctx -> comparison - 1);
         define_var(child_ctx, node -> iterator.value, "undefined", 1); // TODO: yk
         child_ctx -> parent_ctx = ctx;
         code = x86_64_compile_statements(stmnts, child_ctx, NULL);
         free(child_ctx -> for_end);
         child_ctx -> for_end = NULL;
+        free(child_ctx -> true_for_end);
+        child_ctx -> true_for_end = NULL;
         child_ctx -> is_lib = 0;
         child_ctx -> lib_name = NULL;
         delete_context(child_ctx);
@@ -882,6 +888,9 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
     free(stmnts -> statements);
     free(stmnts);
     strconcat(&for_body, code);
+    strconcat(&for_body, ".for_");
+    strconcat(&for_body, tmp);
+    strconcat(&for_body, "_end:\n");
     strconcat(&for_body, "    add r9, 8\n");
     strconcat(&for_body, "    sub r8, 1\n");
     strconcat(&for_body, "    cmp r8, 0\n");
@@ -890,7 +899,7 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
     strconcat(&for_body, "\n");
     strconcat(&for_body, ".for_");
     strconcat(&for_body, tmp);
-    strconcat(&for_body, "_end:\n");
+    strconcat(&for_body, "_true_end:\n");
     free(tmp);
     free(code);
     return for_body;
@@ -909,9 +918,13 @@ char* x86_64_While(lqdWhileNode* node, lqdCompilerContext* ctx) {
     strconcat(&while_body, ":\n");
     ctx -> while_end = malloc(100);
     sprintf(ctx -> while_end, ".while_%li_end", ctx -> comparison - 1);
+    ctx -> true_while_end = malloc(100);
+    sprintf(ctx -> true_while_end, ".while_%li_true_end", ctx -> comparison - 1);
     char* tmp2 = x86_64_compile_stmnt(node -> body, ctx);
     free(ctx -> while_end);
     ctx -> while_end = NULL;
+    free(ctx -> true_while_end);
+    ctx -> true_while_end = NULL;
     strconcat(&while_body, tmp2);
     free(tmp2);
     strconcat(&while_body, ".while_");
@@ -924,6 +937,9 @@ char* x86_64_While(lqdWhileNode* node, lqdCompilerContext* ctx) {
     strconcat(&while_body, "    je .while_");
     strconcat(&while_body, tmp);
     strconcat(&while_body, "\n");
+    strconcat(&while_body, ".while_");
+    strconcat(&while_body, tmp);
+    strconcat(&while_body, "_true_end:\n");
     free(tmp2);
     free(tmp);
     return while_body;
@@ -960,13 +976,42 @@ char* x86_64_VarReassign(lqdVarReassignNode* node, lqdCompilerContext* ctx) {
     return var_reassign;
 };
 char* x86_64_Return(lqdReturnNode* node, lqdCompilerContext* ctx) {
-    return "";
+    char* ret_body = malloc(1);
+    ret_body[0] = 0;
+    strconcat(&ret_body, "    mov rsp, rbp\n");
+    strconcat(&ret_body, "    pop rbp\n");
+    if (node -> returns) {
+        char* tmp = x86_64_compile_stmnt(node -> return_value, ctx);
+        strconcat(&ret_body, tmp);
+        free(tmp);
+        strconcat(&ret_body, "    pop rax\n");
+        strconcat(&ret_body, "    pop rbx\n");
+        strconcat(&ret_body, "    push rax\n");
+        strconcat(&ret_body, "    push rbx\n");
+    }
+    strconcat(&ret_body, "    ret\n");
+    ctx -> returns = 1;
+    return ret_body;
 };
 char* x86_64_Continue(lqdContinueNode* node, lqdCompilerContext* ctx) {
-    return "";
+    char* cont = malloc(1);
+    cont[0] = 0;
+    strconcat(&cont, "    jmp ");
+    if (ctx -> while_end)
+        strconcat(&cont, ctx -> while_end);
+    else
+        strconcat(&cont, ctx -> for_end);
+    return cont;
 };
 char* x86_64_Break(lqdBreakNode* node, lqdCompilerContext* ctx) {
-    return "";
+    char* brk = malloc(1);
+    brk[0] = 0;
+    strconcat(&brk, "    jmp ");
+    if (ctx -> while_end)
+        strconcat(&brk, ctx -> true_while_end);
+    else
+        strconcat(&brk, ctx -> true_for_end);
+    return brk;
 };
 char* x86_64_Construct(lqdConstructorNode* node, lqdCompilerContext* ctx) {
     return "";
@@ -1180,8 +1225,13 @@ char* x86_64_compile(lqdStatementsNode* statements, char* code, char* filename) 
     strconcat(&section_bss, ctx -> section_bss);
     strconcat(&final_code, section_bss);
     strconcat(&final_code, "section .text\n");
+#ifdef __WIN64
+    strconcat(&final_code, "global WinMain\n");
+    strconcat(&final_code, "WinMain:\n");
+#else
     strconcat(&final_code, "global _start\n");
     strconcat(&final_code, "_start:\n");
+#endif
     strconcat(&final_code, "    call main\n");
     strconcat(&final_code, "    mov rax, 60\n");
     strconcat(&final_code, "    mov rdi, 0\n");

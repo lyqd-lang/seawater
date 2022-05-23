@@ -13,7 +13,7 @@ char* source_file = "\0";
 char* dof = "a";
 #ifdef __WIN64
     char* format = "win64";
-    char* linker = "link.exe";
+    char* linker = "ld";
     char* os     = "windows 64bit";
 #else
     char* format = "elf64";
@@ -115,7 +115,7 @@ int main(int argc, char** argv) {
     if (produce_binary) {
         char* obj = malloc(256);
         sprintf(obj, "%s.o", output_file);
-        sprintf(cmd, "%s %s.o -o %s", linker, output_file, output_file);
+        sprintf(cmd, "%s %s.o -o %s bin/runtime/runtime.o", linker, output_file, output_file);
         for (int i = 0; i < object_values; i++) {
             strcat(cmd, " ");
             strcat(cmd, object_files[i]);
