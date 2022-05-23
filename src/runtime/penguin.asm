@@ -5,8 +5,8 @@ section .bss
 section .text
 global __x86_64_clyqd_fputc
 __x86_64_clyqd_fputc:
-    mov rax, [rsp + 8]
-    mov rdi, [rsp + 16]
+    mov rdi, [rsp + 8]
+    mov rax, [rsp + 16]
     mov [tmp_str], rax
     mov rax, 1
     mov rsi, tmp_str

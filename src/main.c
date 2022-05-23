@@ -136,10 +136,8 @@ int main(int argc, char** argv) {
         remove(obj);
         free(obj);
     }
-    if (keep_asm) {
-        sprintf(cmd, "mv %s ./%s.asm", asmtmp, output_file);
-        system(cmd);
-    }
+    if (!keep_asm)
+        remove("lqdtmp.asm");
     free(object_files);
     free(cmd);
     free(new_code);

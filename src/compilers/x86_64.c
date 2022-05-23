@@ -1077,8 +1077,8 @@ char* x86_64_Employ(lqdEmployNode* node, lqdCompilerContext* ctx) {
     }
 
     strconcat(get_glob_section_bss(ctx), *get_glob_section_bss(nctx));
-    cc -> child_contexts += nctx -> child_contexts + 1 - cc -> child_contexts;
-    cc -> defined_arrays += nctx -> defined_arrays + 1 - cc -> defined_arrays;
+    cc -> child_contexts += nctx -> child_contexts - cc -> child_contexts + 1;
+    cc -> defined_arrays += nctx -> defined_arrays - cc -> defined_arrays + 1;
     delete_context(nctx);
     free(code);
     lqdTokenArray_delete(tokens);
