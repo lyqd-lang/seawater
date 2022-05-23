@@ -269,7 +269,7 @@ void define_func(lqdNamespace* namespace, char* name, lqdParameterArray* params,
     if (namespace -> defined_funcs_vals == namespace -> defined_funcs_size) {
         namespace -> defined_funcs_size *= 2;
         namespace -> defined_funcs = realloc(namespace -> defined_funcs, namespace -> defined_funcs_size * sizeof(char*));
-        namespace -> func_params = realloc(namespace -> func_params, namespace -> defined_funcs_size * sizeof(int));
+        namespace -> func_params = realloc(namespace -> func_params, namespace -> defined_funcs_size * sizeof(lqdParameterArray*));
         namespace -> is_extern_func = realloc(namespace -> is_extern_func, namespace -> defined_funcs_size);
     }
     namespace -> defined_funcs[namespace -> defined_funcs_vals] = malloc(strlen(name) + 1);
@@ -367,7 +367,7 @@ char* x86_64_Array(lqdArrayNode* node, lqdCompilerContext* ctx) {
     lqdCompilerContext* top_lvl_ctx = ctx;
     while (top_lvl_ctx -> is_child_ctx)top_lvl_ctx = top_lvl_ctx -> parent_ctx;
     char* tmp = malloc(8);
-    sprintf(tmp, "%li", top_lvl_ctx -> defined_arrays++);
+    sprintf(tmp, "%li", ++top_lvl_ctx -> defined_arrays);
     char* tmp5 = malloc(8);
     sprintf(tmp5, "%li", node -> values -> values);
     strconcat(get_glob_section_bss(ctx), "    arr");
@@ -427,7 +427,7 @@ char* x86_64_String(lqdStringNode* node, lqdCompilerContext* ctx) {
     lqdCompilerContext* top_lvl_ctx = ctx;
     while (top_lvl_ctx -> is_child_ctx)top_lvl_ctx = top_lvl_ctx -> parent_ctx;
     char* tmp = malloc(21);
-    sprintf(tmp, "%li", top_lvl_ctx -> defined_arrays++);
+    sprintf(tmp, "%li", ++top_lvl_ctx -> defined_arrays);
     char* tmp5 = malloc(21);
     sprintf(tmp5, "%li", strlen(node -> tok.value));
     strconcat(get_glob_section_bss(ctx), "    str");
@@ -870,8 +870,8 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
         child_ctx -> lib_name = ctx -> lib_name;
         child_ctx -> for_end = malloc(100);
         sprintf(child_ctx -> for_end, ".for_%li_end", ctx -> comparison - 1);
-        child_ctx -> for_end = malloc(100);
-        sprintf(child_ctx -> for_end, ".for_%li_true_end", ctx -> comparison - 1);
+        child_ctx -> true_for_end = malloc(100);
+        sprintf(child_ctx -> true_for_end, ".for_%li_true_end", ctx -> comparison - 1);
         define_var(child_ctx, node -> iterator.value, "undefined", 1); // TODO: yk
         child_ctx -> parent_ctx = ctx;
         code = x86_64_compile_statements(stmnts, child_ctx, NULL);
@@ -996,6 +996,8 @@ char* x86_64_Return(lqdReturnNode* node, lqdCompilerContext* ctx) {
 char* x86_64_Continue(lqdContinueNode* node, lqdCompilerContext* ctx) {
     char* cont = malloc(1);
     cont[0] = 0;
+    if (ctx -> while_end == NULL && ctx -> for_end == NULL)
+        lqdCompilerError(ctx, node -> tok.line, node -> tok.idx_start, node -> tok.idx_end, "Cannot continue outside of loop!\n");
     strconcat(&cont, "    jmp ");
     if (ctx -> while_end)
         strconcat(&cont, ctx -> while_end);
@@ -1006,6 +1008,8 @@ char* x86_64_Continue(lqdContinueNode* node, lqdCompilerContext* ctx) {
 char* x86_64_Break(lqdBreakNode* node, lqdCompilerContext* ctx) {
     char* brk = malloc(1);
     brk[0] = 0;
+    if (ctx -> true_while_end == NULL && ctx -> true_for_end == NULL)
+        lqdCompilerError(ctx, node -> tok.line, node -> tok.idx_start, node -> tok.idx_end, "Cannot break outside of loop!\n");
     strconcat(&brk, "    jmp ");
     if (ctx -> while_end)
         strconcat(&brk, ctx -> true_while_end);
@@ -1055,7 +1059,9 @@ char* x86_64_Employ(lqdEmployNode* node, lqdCompilerContext* ctx) {
     code[--code_len] = 0;
     lqdTokenArray* tokens = tokenize(code, path);
     lqdStatementsNode* AST = parse(tokens, code, path);
-    lqdCompilerContext* nctx = create_context(code, path, 0, ++ctx -> child_contexts);
+    lqdCompilerContext* cc = ctx;
+    while (cc -> is_child_ctx) cc = cc -> parent_ctx;
+    lqdCompilerContext* nctx = create_context(code, path, 0, ++cc -> child_contexts);
     nctx -> lib_name = malloc(strlen(node -> is_aliased ? node -> alias.value : node -> lib_path -> tokens[node -> lib_path -> values - 1].value) + 1);
     strcpy(nctx -> lib_name, node -> is_aliased ? node -> alias.value : node -> lib_path -> tokens[node -> lib_path -> values - 1].value);
     nctx -> is_lib = 1;
@@ -1071,7 +1077,8 @@ char* x86_64_Employ(lqdEmployNode* node, lqdCompilerContext* ctx) {
     }
 
     strconcat(get_glob_section_bss(ctx), *get_glob_section_bss(nctx));
-    ctx -> child_contexts += ctx -> child_contexts - nctx -> child_contexts + 1;
+    cc -> child_contexts += nctx -> child_contexts + 1 - cc -> child_contexts;
+    cc -> defined_arrays += nctx -> defined_arrays + 1 - cc -> defined_arrays;
     delete_context(nctx);
     free(code);
     lqdTokenArray_delete(tokens);
@@ -1178,15 +1185,24 @@ char* x86_64_compile_statements(lqdStatementsNode* statements, lqdCompilerContex
                 free(reassign_body);
                 break;
             }
-            case NT_Return:
-                strconcat(&section_text, x86_64_Return((lqdReturnNode*)statements -> statements[i].node, ctx));
+            case NT_Return: {
+                char* ret = x86_64_Return((lqdReturnNode*)statements -> statements[i].node, ctx);
+                strconcat(&section_text, ret);
+                free(ret);
                 break;
-            case NT_Continue:
-                strconcat(&section_text, x86_64_Continue((lqdContinueNode*)statements -> statements[i].node, ctx));
+            }
+            case NT_Continue: {
+                char* cont = x86_64_Continue((lqdContinueNode*)statements -> statements[i].node, ctx);
+                strconcat(&section_text, cont);
+                free(cont);
                 break;
-            case NT_Break:
-                strconcat(&section_text, x86_64_Break((lqdBreakNode*)statements -> statements[i].node, ctx));
+            }
+            case NT_Break: {
+                char* brk = x86_64_Break((lqdBreakNode*)statements -> statements[i].node, ctx);
+                strconcat(&section_text, brk);
+                free(brk);
                 break;
+            }
             case NT_Construct:
                 strconcat(&section_text, x86_64_Construct((lqdConstructorNode*)statements -> statements[i].node, ctx));
                 break;

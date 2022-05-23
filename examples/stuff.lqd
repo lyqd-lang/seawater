@@ -1,6 +1,13 @@
-employ std.io -> stdio;
+employ std.io;
+employ std.types;
+employ std.sys;
 
 fn main() {
-    stdio.putn(123);
-    stdio.putc(10);
+    io.println("-- Some test on the stdlib --");
+    io.putn(types.string_to_num("123"));
+    io.putc(10);
+    io.putn(-123);
+    io.putc(10);
+    io.putn(types.string_to_num("-123"));
+    io.putc(10);
 }

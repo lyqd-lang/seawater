@@ -15,10 +15,12 @@ char* dof = "a";
     char* format = "win64";
     char* linker = "ld";
     char* os     = "windows 64bit";
+    char* tmp    = "./";
 #else
     char* format = "elf64";
     char* linker = "ld";
     char* os     = "unix 64bit";
+    char* tmp    = "./";
 #endif
 
 char** object_files;
@@ -53,7 +55,16 @@ void filter_args(int argc, char** argv) {
     }
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-o")) {
-            output_file = argv[++i];
+            char* outputfile = malloc(256);
+            int p = 0;
+            char* o = argv[++i];
+            for (int i = 0; i < strlen(o); i++) {
+                if (o[i] == '.')break;
+                outputfile[p] = o[p];
+                p++;
+            }
+            outputfile[p] = 0;
+            output_file = outputfile;
         } else if (!strcmp(argv[i], "-v")) {
             printf("clyqd 0.1-dev\n");
             exit(0);
@@ -105,17 +116,18 @@ int main(int argc, char** argv) {
     if (*output_file == 0)
         output_file = dof;
     char* new_code = x86_64_compile(AST, code, source_file);
-    file = fopen("lqdtmp.asm", "w");
+    char* asmtmp = malloc(100);
+    sprintf(asmtmp, "%slqdtmp.asm", tmp);
+    file = fopen(asmtmp, "w");
     fputs(new_code, file);
     fclose(file);
     char* cmd = malloc(1024);
-    sprintf(cmd, "nasm -o %s.o lqdtmp.asm -f %s", output_file, format);
+    sprintf(cmd, "nasm -o %s%s.o %s -f %s", tmp, output_file, asmtmp, format);
     system(cmd);
-    remove("lqdtmp.o");
     if (produce_binary) {
         char* obj = malloc(256);
         sprintf(obj, "%s.o", output_file);
-        sprintf(cmd, "%s %s.o -o %s bin/runtime/runtime.o", linker, output_file, output_file);
+        sprintf(cmd, "%s %s%s.o -o %s bin/runtime/runtime.o", linker, tmp, output_file, output_file);
         for (int i = 0; i < object_values; i++) {
             strcat(cmd, " ");
             strcat(cmd, object_files[i]);
@@ -124,12 +136,15 @@ int main(int argc, char** argv) {
         remove(obj);
         free(obj);
     }
+    if (keep_asm) {
+        sprintf(cmd, "mv %s ./%s.asm", asmtmp, output_file);
+        system(cmd);
+    }
     free(object_files);
     free(cmd);
     free(new_code);
     free(code);
-    if (!keep_asm)
-        remove("lqdtmp.asm");
+    free(asmtmp);
     lqdTokenArray_delete(tokens);
     lqdStatementsNode_delete(AST);
     return 0;

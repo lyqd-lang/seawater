@@ -58,6 +58,17 @@ lqdTokenArray* tokenize(char* code, char* filename) {
                 if (code[idx+1] == '/') {
                     while (code[idx] != '\n')idx++;
                     idx++;
+                } else if (code[idx+1] == '*') {
+                    while (code[idx]) {
+                        idx++;
+                        if (code[idx] == '*') {
+                            idx++;
+                            if (code[idx] == '/') {
+                                idx++;
+                                break;
+                            }
+                        }
+                    }
                 } else {
                     lqdTokenArray_push(tokens, lqdToken_new(TT_DIV, NULL, idx, idx, line));
                     idx++;

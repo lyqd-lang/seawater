@@ -1,7 +1,17 @@
-extern __x86_64_clyqd_putc(chr byte);
+/*
+std.io
+    Author: WoffleTbh
+    Description:
+        A simple library providing a lyqd frontend
+        for communication with the terminal
+        (or commandline on windows)
+    Last revision: 23/05/22 (DD/MM/YY)
+*/
+
+extern __x86_64_clyqd_fputc(num fd, chr byte);
 
 fn putc(chr char) {
-    __x86_64_clyqd_putc(char);
+    __x86_64_clyqd_fputc(1, char);
 }
 
 fn puts(str string) {
@@ -16,7 +26,7 @@ fn println(str string) {
 }
 
 fn putn(num number) {
-    str string = "            "; // "allocate" 12 bytes, enough to store a 32bit integer
+    str string = "                    "; // "allocate" 20 bytes, enough to store a 64bit integer
     num pos = 0;
     str nums = "0123456789";
     while number > 0 {
@@ -25,6 +35,9 @@ fn putn(num number) {
         pos = pos + 1;
     }
     num i = 11;
+    if number < 0 {
+        putc(45);
+    }
     while i > -1 {
         if string[i] != ' ' {
             putc(string[i]);

@@ -114,8 +114,10 @@ class Compiler:
         if not os.path.exists("bin/runtime"):
             os.mkdir("bin/runtime")
         if self.os == "windows":
+            print(" ".join(["nasm", "-fwin64", "src/runtime/win.asm", "-o", "bin/runtime/runtime.o"]))
             subprocess.run(["nasm", "-fwin64", "src/runtime/win.asm", "-o", "bin/runtime/runtime.o"])
         else:
+            print(" ".join(["nasm", "-felf64", "src/runtime/penguin.asm", "-o", "bin/runtime/runtime.o"]))
             subprocess.run(["nasm", "-felf64", "src/runtime/penguin.asm", "-o", "bin/runtime/runtime.o"])
 
 

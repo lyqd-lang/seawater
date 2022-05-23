@@ -1,0 +1,47 @@
+/*
+std.types
+    Author: WoffleTbh
+    Description:
+        A library that provides helper functions
+        to perform type conversion
+    Last revision: 23/05/22 (DD/MM/YY)
+*/
+
+employ std.io -> stdio;
+employ std.sys -> stdsys;
+
+fn char_to_num(chr char) {
+    if char < 48 {
+        stdio.println("Cannot convert character to integer as it's below 48 ('0')!");
+        stdsys.exit(1);
+    } else if char > 57 {
+        stdio.println("Cannot convert character to integer as it's above 57 ('9')!");
+        stdsys.exit(1);
+    }
+    return char - 48;
+}
+
+fn string_to_num(str string) -> num {
+    num number = 0;
+    for i in string {
+        number = number * 10;
+        number = number + char_to_num(i);
+    }
+    return number;
+}
+
+fn num_to_string(num number) -> str {
+    // Due to compiler limitations, you can't properly implement this function yet
+    str string = "                    ";
+    num pos = 0;
+    str nums = "0123456789";
+    while number > 0 {
+        string[pos] = nums[number % 10];
+        number = number / 10;
+        pos = pos + 1;
+    }
+    if number < 0 {
+        string[pos] = '-';
+    }
+    return string;
+}
