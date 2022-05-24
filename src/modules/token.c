@@ -41,7 +41,7 @@ lqdToken lqdToken_new(lqdTokenType type, char* value, uint64_t idx_start, uint64
 }
 
 void lqdToken_delete(lqdToken* token) {
-    if (token -> type >= TT_INT && token -> type <= TT_IDEN) {
+    if ((token -> type >= TT_INT && token -> type <= TT_IDEN) || token -> type == TT_RESARR) {
         free(token -> value);
     }
 }

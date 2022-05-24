@@ -1,0 +1,5 @@
+extern __x86_64_clyqd_exit(num retcode);
+
+fn exit(num retcode) {
+    __x86_64_clyqd_exit(retcode);
+}

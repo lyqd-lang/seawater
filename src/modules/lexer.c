@@ -215,7 +215,7 @@ lqdTokenArray* tokenize(char* code, char* filename) {
                         exit(1);
                     }
                     value = realloc(value, value_size+1);
-                    value[value_ptr++] = 0;
+                    value[value_ptr] = 0;
                     lqdTokenArray_push(tokens, lqdToken_new(type, value, idx_start, idx-1, line));
                     break;
                 }

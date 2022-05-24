@@ -158,6 +158,7 @@ lqdASTNode statement(lqdParserCtx* ctx) {
                 has_else_case = 1;
             }
             if (ctx -> tok.type == TT_IDEN && !strcmp(ctx -> tok.value, "if")) {
+                has_else_case = 0;
                 advance(ctx);
                 lqdStatementsNode_push(conditions, expr(ctx));
                 lqdStatementsNode_push(bodies, statement(ctx));
@@ -340,6 +341,10 @@ lqdASTNode statement(lqdParserCtx* ctx) {
             lqdASTNode node = {NT_VarReassign, reassign};
             return node;
         }
+        free(var_path -> tokens);
+        free(var_path);
+        if (has_slice)
+            lqdASTNode_delete(slice);
         lqdType var_type = type(ctx);
         if (ctx -> tok.type != TT_IDEN)
             lqdSyntaxError(ctx, "Expected identifier!");

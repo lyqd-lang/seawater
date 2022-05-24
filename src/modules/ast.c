@@ -117,6 +117,10 @@ void lqdASTNode_delete(lqdASTNode node) {
             lqdStatementsNode_delete(((lqdConstructorNode*)node.node) -> args);
             free((lqdConstructorNode*)node.node);
             break;
+        case NT_Arr:
+            lqdStatementsNode_delete(((lqdArrayNode*)node.node) -> values);
+            free((lqdArrayNode*)node.node);
+            break;
         default:
             break;
     }

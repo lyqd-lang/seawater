@@ -46,3 +46,9 @@ fn putn(num number) {
         i = i - 1;
     }
 }
+
+fn putarr(arr array) {
+    for i in array {
+        putn(i);
+    }
+}

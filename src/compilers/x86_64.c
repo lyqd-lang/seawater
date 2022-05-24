@@ -323,6 +323,10 @@ char* x86_64_compile_stmnt(lqdASTNode statement, lqdCompilerContext* ctx) {
     if (statement.type == NT_Statements) {
         lqdCompilerContext* child_ctx = create_context(ctx -> code, ctx -> filename, 1, ++cc -> child_contexts);
         child_ctx -> is_lib = ctx -> is_lib;
+        child_ctx -> while_end = ctx -> while_end;
+        child_ctx -> for_end = ctx -> for_end;
+        child_ctx -> true_while_end = ctx -> true_while_end;
+        child_ctx -> true_for_end = ctx -> true_for_end;
         if (ctx -> is_lib) {
             child_ctx -> lib_name = malloc(strlen(ctx -> lib_name) + 1);
             strcpy(child_ctx -> lib_name, ctx -> lib_name);
@@ -767,8 +771,8 @@ char* x86_64_If(lqdIfNode* node, lqdCompilerContext* ctx) {
         char* tmp3 = x86_64_compile_stmnt(node -> conditions -> statements[i], ctx);
         strconcat(&if_body, tmp3);
         strconcat(&if_body, "    pop rax\n");
-        strconcat(&if_body, "    cmp rax, 1\n");
-        strconcat(&if_body, "    jne .if_case_");
+        strconcat(&if_body, "    cmp rax, 0\n");
+        strconcat(&if_body, "    je .if_case_");
         strconcat(&if_body, tmp);
         strconcat(&if_body, "_");
         sprintf(tmp2, "%i", i+1);
@@ -822,7 +826,9 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
     char* for_body = malloc(1);
     for_body[0] = 0;
     char* tmp = malloc(20);
-    sprintf(tmp, "%li", ctx -> comparison++);
+    lqdCompilerContext* cc = ctx;
+    while (cc -> is_child_ctx) cc = cc -> parent_ctx;
+    sprintf(tmp, "%li", cc -> comparison++);
     char* tmp2 = malloc(20);
     sprintf(tmp2, "%i", ctx -> id + 1);
     strconcat(get_glob_section_bss(ctx), "    ");
@@ -904,7 +910,9 @@ char* x86_64_While(lqdWhileNode* node, lqdCompilerContext* ctx) {
     while_body[0] = 0;
     char* tmp = malloc(8);
     tmp[0] = 0;
-    sprintf(tmp, "%li", ctx -> comparison++);
+    lqdCompilerContext* cc = ctx;
+    while (cc -> is_child_ctx) cc = cc -> parent_ctx;
+    sprintf(tmp, "%li", cc -> comparison++);
     strconcat(&while_body, "    jmp .while_");
     strconcat(&while_body, tmp);
     strconcat(&while_body, "_end\n");
@@ -912,9 +920,9 @@ char* x86_64_While(lqdWhileNode* node, lqdCompilerContext* ctx) {
     strconcat(&while_body, tmp);
     strconcat(&while_body, ":\n");
     ctx -> while_end = malloc(100);
-    sprintf(ctx -> while_end, ".while_%li_end", ctx -> comparison - 1);
+    sprintf(ctx -> while_end, ".while_%li_end", cc -> comparison - 1);
     ctx -> true_while_end = malloc(100);
-    sprintf(ctx -> true_while_end, ".while_%li_true_end", ctx -> comparison - 1);
+    sprintf(ctx -> true_while_end, ".while_%li_true_end", cc -> comparison - 1);
     char* tmp2 = x86_64_compile_stmnt(node -> body, ctx);
     free(ctx -> while_end);
     ctx -> while_end = NULL;
@@ -998,6 +1006,7 @@ char* x86_64_Continue(lqdContinueNode* node, lqdCompilerContext* ctx) {
         strconcat(&cont, ctx -> while_end);
     else
         strconcat(&cont, ctx -> for_end);
+    strconcat(&cont, "\n");
     return cont;
 };
 char* x86_64_Break(lqdBreakNode* node, lqdCompilerContext* ctx) {
@@ -1010,6 +1019,7 @@ char* x86_64_Break(lqdBreakNode* node, lqdCompilerContext* ctx) {
         strconcat(&brk, ctx -> true_while_end);
     else
         strconcat(&brk, ctx -> true_for_end);
+    strconcat(&brk, "\n");
     return brk;
 };
 char* x86_64_Construct(lqdConstructorNode* node, lqdCompilerContext* ctx) {
@@ -1123,9 +1133,12 @@ char* x86_64_compile_statements(lqdStatementsNode* statements, lqdCompilerContex
                 free(op);
                 break;
             }
-            case NT_Unary:
-                strconcat(&section_text, x86_64_Unary((lqdUnaryOpNode*)statements -> statements[i].node, ctx));
+            case NT_Unary: {
+                char* unop = x86_64_Unary((lqdUnaryOpNode*)statements -> statements[i].node, ctx);
+                strconcat(&section_text, unop);
+                free(unop);
                 break;
+            }
             case NT_VarDecl: {
                 char* var_decl = x86_64_VarDecl((lqdVarDeclNode*)statements -> statements[i].node, ctx, namespace);
                 strconcat(&section_text, var_decl);
