@@ -117,7 +117,7 @@ char is_defined(lqdCompilerContext* ctx, char* name) {
 
 char is_defined_func(lqdCompilerContext* ctx, lqdTokenArray* path) {
     char exists = -1;
-    char is_nested = 1;
+    char is_nested = 0;
     char* root = path -> tokens[0].value;
     int idx = 0;
     lqdCompilerContext* current_ctx = ctx;
@@ -383,7 +383,10 @@ char* x86_64_Array(lqdArrayNode* node, lqdCompilerContext* ctx) {
     strconcat(get_glob_section_bss(ctx), tmp);
     strconcat(get_glob_section_bss(ctx), "elements: resq ");
     char* tmp2 = malloc(8);
-    sprintf(tmp2, "%li", node -> values -> size);
+    if (!node -> is_reserved)
+        sprintf(tmp2, "%li", node -> values -> size);
+    else
+        strcpy(tmp2, node -> reserved.value);
     strconcat(get_glob_section_bss(ctx), tmp2);
     strconcat(get_glob_section_bss(ctx), "\n");
     for (uint64_t i = 0; i < node -> values -> values; i++) {
@@ -644,11 +647,6 @@ char* x86_64_FuncDecl(lqdFuncDeclNode* node, lqdCompilerContext* ctx, char* name
         strconcat(&func_body, "\n");
         return func_body;
     }
-    if (ctx -> is_child_ctx) {
-        strconcat(&func_body, "    jmp .");
-        strconcat(&func_body, node -> name.value);
-        strconcat(&func_body, "_end\n.");
-    }
     if (namespace != NULL) {
         strconcat(&func_body, namespace);
         strconcat(&func_body, "_");
@@ -709,11 +707,6 @@ char* x86_64_FuncDecl(lqdFuncDeclNode* node, lqdCompilerContext* ctx, char* name
     strconcat(&func_body, "    mov rsp, rbp\n");
     strconcat(&func_body, "    pop rbp\n");
     strconcat(&func_body, "    ret\n");
-    if (ctx -> is_child_ctx) {
-        strconcat(&func_body, ".");
-        strconcat(&func_body, node -> name.value);
-        strconcat(&func_body, "_end:\n");
-    }
     return func_body;
 };
 char* x86_64_Statements(lqdStatementsNode* node, lqdCompilerContext* ctx) {
@@ -759,7 +752,9 @@ char* x86_64_If(lqdIfNode* node, lqdCompilerContext* ctx) {
     if_body[0] = 0;
     char* tmp = malloc(8);
     tmp[0] = 0;
-    sprintf(tmp, "%li", ctx -> comparison++);
+    lqdCompilerContext* cc = ctx;
+    while (cc -> is_child_ctx) cc = cc -> parent_ctx;
+    sprintf(tmp, "%li", cc -> comparison++);
     for (int i = 0; i < node -> conditions -> values; i++) {
         strconcat(&if_body, ".if_case_");
         strconcat(&if_body, tmp);
@@ -1061,7 +1056,8 @@ char* x86_64_Employ(lqdEmployNode* node, lqdCompilerContext* ctx) {
     lqdStatementsNode* AST = parse(tokens, code, path);
     lqdCompilerContext* cc = ctx;
     while (cc -> is_child_ctx) cc = cc -> parent_ctx;
-    lqdCompilerContext* nctx = create_context(code, path, 0, ++cc -> child_contexts);
+    lqdCompilerContext* nctx = create_context(code, path, 1, ++cc -> child_contexts);
+    nctx -> parent_ctx = cc;
     nctx -> lib_name = malloc(strlen(node -> is_aliased ? node -> alias.value : node -> lib_path -> tokens[node -> lib_path -> values - 1].value) + 1);
     strcpy(nctx -> lib_name, node -> is_aliased ? node -> alias.value : node -> lib_path -> tokens[node -> lib_path -> values - 1].value);
     nctx -> is_lib = 1;
@@ -1076,9 +1072,6 @@ char* x86_64_Employ(lqdEmployNode* node, lqdCompilerContext* ctx) {
         define_func(ctx -> namespace -> libraries[ctx -> namespace -> libraries_vals - 1], nctx -> namespace -> defined_funcs[i], nctx -> namespace -> func_params[i], nctx -> namespace -> is_extern_func[i]);
     }
 
-    strconcat(get_glob_section_bss(ctx), *get_glob_section_bss(nctx));
-    cc -> child_contexts += nctx -> child_contexts - cc -> child_contexts + 1;
-    cc -> defined_arrays += nctx -> defined_arrays - cc -> defined_arrays + 1;
     delete_context(nctx);
     free(code);
     lqdTokenArray_delete(tokens);

@@ -49,6 +49,7 @@ typedef enum {
     TT_BITOR,
 
     /* Misc */
+    TT_RESARR, // temporary
     TT_EOF,
 } lqdTokenType;
 

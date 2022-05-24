@@ -188,6 +188,7 @@ lqdTokenArray* tokenize(char* code, char* filename) {
                     uint64_t value_size = 16;
                     uint64_t value_ptr = 0;
                     char dots = 0;
+                    lqdTokenType type = TT_INT;
                     while ((code[idx] >= '0' && code[idx] <= '9') || code[idx] == '.') {
                         if (value_ptr >= value_size) {
                             value_size *= 2;
@@ -201,6 +202,13 @@ lqdTokenArray* tokenize(char* code, char* filename) {
                             dots++;
                         value[value_ptr++] = code[idx];
                         idx++;
+                        if (code[idx] == '[') {
+                            idx++;
+                            if (code[idx] != ']')
+                                lqdTokenizerError(lqdToken_new(0, NULL, idx_start, idx, line), "Expected ']'", code, filename);
+                            idx++;
+                            type = TT_RESARR;
+                        }
                     }
                     if (dots > 1) {
                         lqdTokenizerError(lqdToken_new(0, NULL, idx_start, idx, line), "Malformed number", code, filename);
@@ -208,7 +216,7 @@ lqdTokenArray* tokenize(char* code, char* filename) {
                     }
                     value = realloc(value, value_size+1);
                     value[value_ptr++] = 0;
-                    lqdTokenArray_push(tokens, lqdToken_new(dots == 0 ? TT_INT : TT_FLOAT, value, idx_start, idx-1, line));
+                    lqdTokenArray_push(tokens, lqdToken_new(type, value, idx_start, idx-1, line));
                     break;
                 }
                 if (code[idx] == '"') {

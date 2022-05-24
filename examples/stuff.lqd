@@ -1,5 +1,8 @@
-employ std.io;
+employ std.io -> stdio;
 
 fn main() {
-    io.println("I fixed it (sorta)");
+    stdio.putn(123);
+    stdio.putc(10);
+    stdio.putn(-456);
+    stdio.putc(10);
 }

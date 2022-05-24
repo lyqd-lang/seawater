@@ -515,6 +515,14 @@ lqdASTNode factor(lqdParserCtx* ctx) {
         advance(ctx);
         lqdASTNode node = {NT_String, var};
         return node;
+    }  else if (ctx -> tok.type == TT_RESARR) {
+        lqdArrayNode* var = malloc(sizeof(lqdArrayNode));
+        var -> values = lqdStatementsNode_new(1);
+        var -> is_reserved = 1;
+        var -> reserved = ctx -> tok;
+        advance(ctx);
+        lqdASTNode node = {NT_Arr, var};
+        return node;
     } else if (ctx -> tok.type == TT_CHAR) {
         lqdCharNode* var = malloc(sizeof(lqdCharNode));
         var -> tok = ctx -> tok;
@@ -539,6 +547,7 @@ lqdASTNode factor(lqdParserCtx* ctx) {
         advance(ctx);
         lqdArrayNode* arr = malloc(sizeof(lqdArrayNode));
         arr -> values = values;
+        arr -> is_reserved = 0;
         lqdASTNode node = {NT_Arr, arr};
         return node;
     }

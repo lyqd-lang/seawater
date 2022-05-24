@@ -160,6 +160,8 @@ typedef struct {
 
 typedef struct {
     lqdStatementsNode* values;
+    char is_reserved;
+    lqdToken reserved;
 } lqdArrayNode;
 
 lqdStatementsNode* lqdStatementsNode_new(uint64_t size);

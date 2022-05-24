@@ -26,7 +26,11 @@ fn println(str string) {
 }
 
 fn putn(num number) {
-    str string = "                    "; // "allocate" 20 bytes, enough to store a 64bit integer
+    if number < 0 {
+        putc(45);
+        number = number - number * 2;
+    }
+    str string = 20[]; // allocate 20 bytes, enough to store a 64bit integer
     num pos = 0;
     str nums = "0123456789";
     while number > 0 {
@@ -35,9 +39,6 @@ fn putn(num number) {
         pos = pos + 1;
     }
     num i = 11;
-    if number < 0 {
-        putc(45);
-    }
     while i > -1 {
         if string[i] != ' ' {
             putc(string[i]);
