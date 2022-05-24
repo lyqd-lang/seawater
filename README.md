@@ -47,7 +47,7 @@ These are the recommended compilers when compiling on windows, thus you can just
 `py build.py`<br/>
 And it will by default use gcc with MinGW<br/>
 #### MSVC
-NOTE: MSVC support isn't fully tested, and fails to compiel on 32bit platforms<br/><br/>
+NOTE: MSVC support isn't fully tested, and fails to compile on 32bit platforms<br/><br/>
 If you're compiling on Visual Studio or wish to use the MSVC compilers, you can run:<br/>
 `py build.py -c cl`<br/>
 Which'll use the MSVC C++ compiler.<br/>
