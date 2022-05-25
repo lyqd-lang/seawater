@@ -1,5 +1,10 @@
-employ std.io -> stdio;
+employ std.io;
+
+fn add(num a, num b) -> num {
+    return a + b;
+}
 
 fn main() {
-    stdio.println("Hello, world!");
+    io.putn(add(100, 200));
+    io.putc(10);
 }

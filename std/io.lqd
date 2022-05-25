@@ -47,7 +47,7 @@ fn putn(num number) {
     }
 }
 
-fn putarr(arr array) {
+fn putarr(arr:num array) {
     for i in array {
         putn(i);
     }

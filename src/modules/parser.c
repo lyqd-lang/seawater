@@ -77,11 +77,19 @@ lqdASTNode statement(lqdParserCtx* ctx) {
             do {
                 if (ctx -> tok.type == TT_COMMA)advance(ctx);
                 lqdType param_type = type(ctx);
+                lqdToken param_element_type;
+                if (ctx -> tok.type == TT_COLON) {
+                    advance(ctx);
+                    param_element_type = ctx -> tok;
+                    if (ctx -> tok.type != TT_IDEN)
+                        lqdSyntaxError(ctx, "Expected identifier!");
+                    advance(ctx);
+                }
                 if (ctx -> tok.type != TT_IDEN)
                     lqdSyntaxError(ctx, "Expected identifier!");
                 lqdToken param_name = ctx -> tok;
                 advance(ctx);
-                lqdParameter param = {param_type, param_name};
+                lqdParameter param = {param_type, param_element_type, param_name};
                 lqdParameterArray_push(params, param);
                 if (ctx -> tok.type != TT_COMMA && ctx -> tok.type != TT_RPAREN)
                     lqdSyntaxError(ctx, "Expected ',' or ')'!");
@@ -348,6 +356,14 @@ lqdASTNode statement(lqdParserCtx* ctx) {
         lqdType var_type = type(ctx);
         if (ctx -> tok.type != TT_IDEN)
             lqdSyntaxError(ctx, "Expected identifier!");
+        lqdToken element_type;
+        if (ctx -> tok.type == TT_COLON) {
+            advance(ctx);
+            if (ctx -> tok.type != TT_IDEN)
+                lqdSyntaxError(ctx, "Expected identifier!");
+            element_type = ctx -> tok;
+            advance(ctx);
+        }
         lqdToken var_name = ctx -> tok;
         advance(ctx);
         if (ctx -> tok.type != TT_SEMICOLON && ctx -> tok.type != TT_EQ)
@@ -371,6 +387,7 @@ lqdASTNode statement(lqdParserCtx* ctx) {
             var_decl -> name = var_name;
             var_decl -> initialized = 1;
             var_decl -> initializer = value;
+            var_decl -> element_type = element_type;
             lqdASTNode node = {NT_VarDecl, var_decl};
             return node;
         }
