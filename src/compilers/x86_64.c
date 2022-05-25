@@ -7,22 +7,132 @@
 #include <stdio.h>
 
 typedef struct {
-    char** defined_funcs;
-    lqdParameterArray** func_params;
-    int defined_funcs_vals;
-    int defined_funcs_size;
-    char* is_extern_func;
-    
-    char** defined_vars;
-    char** var_types;
-    int defined_vars_vals;
-    int defined_vars_size;
-    char* var_init;
+    char* name;
+    char* type;
+    char initialized;
+    uint64_t id;
+} lqdVariable;
 
-    char** defined_libs;
-    void** libraries;
-    int libraries_vals;
-    int libraries_size;
+typedef struct {
+    lqdVariable* vars;
+    int values;
+    int size;
+} lqdVariableArr;
+
+lqdVariable* lqdVariable_new(char* name, char* type, char initialized, uint64_t id) {
+    lqdVariable* var = malloc(sizeof(lqdVariable));
+    var -> name = name;
+    var -> type = type;
+    var -> initialized = initialized;
+    var -> id = id;
+    return var;
+}
+
+lqdVariableArr* lqdVariableArr_new(int size) {
+    lqdVariableArr* arr = malloc(sizeof(lqdVariableArr));
+    arr -> vars = malloc(size * sizeof(lqdVariable));
+    arr -> size = size;
+    arr -> values = 0;
+    return arr;
+}
+
+void lqdVariableArr_push(lqdVariableArr* arr, lqdVariable var) {
+    if (arr -> values == arr -> size) {
+        arr -> size *= 2;
+        arr -> vars = realloc(arr -> vars, arr -> size * sizeof(lqdVariable));
+        if (arr -> vars == NULL) {
+            fprintf(stderr, "Ran out of memory!\n");
+            exit(1);
+        }
+    }
+    arr -> vars[arr -> values++] = var;
+}
+
+typedef struct {
+    char* name;
+    char* ret_type;
+    lqdParameterArray* params;
+    char is_extern;
+} lqdFunction;
+
+typedef struct {
+    lqdFunction* funcs;
+    int values;
+    int size;
+} lqdFuncArr;
+
+lqdFunction* lqdFunction_new(char* name, char* ret_type, lqdParameterArray* params, char is_extern) {
+    lqdFunction* func = malloc(sizeof(lqdFunction));
+    func -> name = malloc(strlen(name) + 1);
+    strcpy(func -> name, name);
+    func -> ret_type = ret_type;
+    func -> params = params;
+    func -> is_extern = is_extern;
+    return func;
+}
+
+lqdFuncArr* lqdFuncArr_new(int size) {
+    lqdFuncArr* arr = malloc(sizeof(lqdFuncArr));
+    arr -> funcs = malloc(size * sizeof(lqdFunction));
+    arr -> size = size;
+    arr -> values = 0;
+    return arr;
+}
+
+void lqdFuncArr_push(lqdFuncArr* arr, lqdFunction func) {
+    if (arr -> values == arr -> size) {
+        arr -> size *= 2;
+        arr -> funcs = realloc(arr -> funcs, arr -> size * sizeof(lqdFunction));
+        if (arr -> funcs == NULL) {
+            fprintf(stderr, "Ran out of memory!\n");
+            exit(1);
+        }
+    }
+    arr -> funcs[arr -> values++] = func;
+}
+
+typedef struct {
+    char* name;
+    void* namespace; // Very safe :)
+} lqdLib;
+
+typedef struct {
+    lqdLib* libs;
+    int values;
+    int size;
+} lqdLibraryArr;
+
+lqdLib* lqdLib_new(char* name, void* namespace) {
+    lqdLib* lib = malloc(sizeof(lqdLib));
+    lib -> name = name;
+    lib -> namespace = namespace;
+    return lib;
+}
+
+lqdLibraryArr* lqdLibraryArr_new(int size) {
+    lqdLibraryArr* arr = malloc(sizeof(lqdLibraryArr));
+    arr -> size = size;
+    arr -> values = 0;
+    arr -> libs = malloc(size * sizeof(lqdLib));
+    return arr;
+}
+
+void lqdLibraryArr_push(lqdLibraryArr* arr, lqdLib lib) {
+    if (arr -> values == arr -> size) {
+        arr -> size *= 2;
+        arr -> libs = realloc(arr -> libs, arr -> size * sizeof(lqdLib));
+        if (arr -> libs == NULL) {
+            fprintf(stderr, "Ran out of memory!\n");
+            exit(1);
+        }
+    }
+    arr -> libs[arr -> values++] = lib;
+}
+
+typedef struct {
+    lqdFuncArr* funcs;
+    lqdVariableArr* vars;
+    lqdLibraryArr* libs;
 } lqdNamespace;
 
 typedef struct {
@@ -62,22 +172,10 @@ lqdCompilerContext* create_context(char* code, char* filename, char is_child, ui
     ctx -> code = code;
     ctx -> filename = filename;
     ctx -> namespace = malloc(sizeof(lqdNamespace));
-    ctx -> namespace -> defined_funcs = malloc(4 * sizeof(char*));
-    ctx -> namespace -> func_params = malloc(4 * sizeof(lqdParameterArray*));
-    ctx -> namespace -> defined_funcs_size = 4;
-    ctx -> namespace -> defined_funcs_vals = 0;
-    ctx -> namespace -> is_extern_func = malloc(4);
 
-    ctx -> namespace -> defined_vars = malloc(4 * sizeof(char*));
-    ctx -> namespace -> var_types = malloc(4 * sizeof(char*));
-    ctx -> namespace -> var_init = malloc(4 * sizeof(char));
-    ctx -> namespace -> defined_vars_size = 4;
-    ctx -> namespace -> defined_vars_vals = 0;
-
-    ctx -> namespace -> defined_libs = malloc(4 * sizeof(char*));
-    ctx -> namespace -> libraries = malloc(4 * sizeof(lqdNamespace*));
-    ctx -> namespace -> libraries_size = 4;
-    ctx -> namespace -> libraries_vals = 0;
+    ctx -> namespace -> funcs = lqdFuncArr_new(1);
+    ctx -> namespace -> vars = lqdVariableArr_new(1);
+    ctx -> namespace -> libs = lqdLibraryArr_new(1);
 
     ctx -> local_vars = 0;
 
@@ -97,13 +195,15 @@ lqdCompilerContext* create_context(char* code, char* filename, char is_child, ui
     return ctx;
 }
 
-char is_defined(lqdCompilerContext* ctx, char* name) {
+lqdVariable is_defined(lqdCompilerContext* ctx, char* name) {
     char exists = 0;
+    lqdVariable var = {NULL, NULL, 0};
     lqdCompilerContext* current_ctx = ctx;
     while (current_ctx -> is_child_ctx) {
-        for (uint64_t i = 0; i < current_ctx -> namespace -> defined_vars_vals; i++) {
-            if (!strcmp(current_ctx -> namespace -> defined_vars[i], name)) {
+        for (uint64_t i = 0; i < current_ctx -> namespace -> vars -> values; i++) {
+            if (!strcmp(current_ctx -> namespace -> vars -> vars[i].name, name)) {
                 exists = current_ctx -> id;
+                var = current_ctx -> namespace -> vars -> vars[i];
             }
         }
         if (!exists) {
@@ -112,89 +212,73 @@ char is_defined(lqdCompilerContext* ctx, char* name) {
             break;
         }
     }
-    return exists;
+    return var;
 }
 
-char is_defined_func(lqdCompilerContext* ctx, lqdTokenArray* path) {
-    char exists = -1;
-    char is_nested = 0;
-    char* root = path -> tokens[0].value;
-    int idx = 0;
-    lqdCompilerContext* current_ctx = ctx;
-    uint64_t vals = path -> values == 1 ? current_ctx -> namespace -> defined_funcs_vals : current_ctx -> namespace -> libraries_vals;
-    char** defs = path -> values == 1 ? current_ctx -> namespace -> defined_funcs : current_ctx -> namespace -> defined_libs;
-    while (current_ctx -> is_child_ctx) {
-        for (uint64_t i = 0; i < vals; i++) {
-            if (!strcmp(defs[i], root)) {
-                exists = 1;
-                idx = i;
-            }
-        }
-        if (exists == -1) {
-            current_ctx = current_ctx -> parent_ctx;
-            vals = path -> values == 1 ? current_ctx -> namespace -> defined_funcs_vals : current_ctx -> namespace -> libraries_vals;
-            defs = path -> values == 1 ? current_ctx -> namespace -> defined_funcs : current_ctx -> namespace -> defined_libs;
-            if (!current_ctx -> is_child_ctx) {
-                is_nested = 0;
-                for (uint64_t i = 0; i < vals; i++) {
-                    if (!strcmp(defs[i], root)) {
-                        exists = 1;
-                        idx = i;
-                    }
+lqdFunction is_defined_func(lqdCompilerContext* ctx, lqdTokenArray* path) {
+    if (path -> values == 1) {
+        lqdFunction func = {};
+        lqdCompilerContext* current_ctx = ctx;
+        char searching = 1;
+        while (searching) {
+            for (int i = 0; i < current_ctx -> namespace -> funcs -> values; i++) {
+                if (!strcmp(current_ctx -> namespace -> funcs -> funcs[i].name, path -> tokens[0].value)) {
+                    searching = 0;
+                    func = current_ctx -> namespace -> funcs -> funcs[i];
                 }
             }
+            if (searching) {
+                if (current_ctx -> is_child_ctx) current_ctx = current_ctx -> parent_ctx;
+                else searching = 0;
+            } else {
+                searching = 0;
+            }
+        }
+        return func;
+    }
+    lqdFunction func = {NULL, NULL, NULL, 0};
+    lqdCompilerContext* current_ctx = ctx;
+    lqdNamespace* currentns = current_ctx -> namespace;
+    char found = 0;
+    char searching = 1;
+    while (searching) {
+        for (int i = 0; i < current_ctx -> namespace -> libs -> values; i++) {
+            if (!strcmp(current_ctx -> namespace -> libs -> libs[i].name, path -> tokens[i].value)) {
+                searching = 0;
+                found = 1;
+                currentns = current_ctx -> namespace  -> libs -> libs[i].namespace;
+            }
+        }
+        if (searching) {
+            if (current_ctx -> is_child_ctx) current_ctx = current_ctx -> parent_ctx;
+            else searching = 0;
         } else {
+            searching = 0;
+        }
+    }
+    if (!found) return func;
+    found = 0;
+    for (int i = 1; i < path -> values - 1; i++) {
+        for (int j = 0; j < current_ctx -> namespace -> libs -> values; j++) {
+            if (!strcmp(current_ctx -> namespace -> libs -> libs[j].name, path -> tokens[i].value)) {
+                found = 1;
+                currentns = current_ctx -> namespace;
+            }
+        }
+        if (!found) {
             break;
         }
     }
-    char is_extern = current_ctx -> namespace -> is_extern_func[idx] * 2;
-    if (path -> values > 1) {
-        is_nested = 0;
-        lqdNamespace* currentns = current_ctx -> namespace -> libraries[idx];
-        char found = 0;
-        int i = 1;
-        while (i != path -> values - 1) {
-            for (uint64_t j = 0; j < currentns -> libraries_vals; j++) {
-                if (!strcmp(currentns -> defined_libs[j], path -> tokens[i].value)) {
-                    found = 1;
-                    currentns = currentns -> libraries[j];
-                }
-            }
-            if (!found)
-                return 0;
-            i++;
+    if (path -> values - 2 && !found) return func;
+    for (int i = 0; i < currentns -> funcs -> values; i++) {
+        if (!strcmp(currentns -> funcs -> funcs[i].name, path -> tokens[path -> values - 1].value)) {
+            func = currentns -> funcs -> funcs[i];
         }
-        for (uint64_t j = 0; j < currentns -> defined_funcs_vals; j++) {
-            if (!strcmp(currentns -> defined_funcs[j], path -> tokens[i].value)) {
-                found = 1;
-                is_extern = currentns -> is_extern_func[j] * 2;
-            }
-        }
-        if (!found)
-            exists = -3;
     }
-    return exists + is_nested + is_extern;
+    return func;
 }
 
 void delete_namespace(lqdNamespace* ns) {
-    for (int i = 0; i < ns -> defined_funcs_vals; i++)
-        free(ns -> defined_funcs[i]);
-    for (int i = 0; i < ns -> defined_vars_vals; i++) {
-        free(ns -> defined_vars[i]);
-        free(ns -> var_types[i]);
-    }
-    for (int i = 0; i < ns -> libraries_vals; i++) {
-        free(ns -> defined_libs[i]);
-        delete_namespace(ns -> libraries[i]);
-    }
-    free(ns -> defined_funcs);
-    free(ns -> func_params);
-    free(ns -> var_init);
-    free(ns -> var_types);
-    free(ns -> defined_vars);
-    free(ns -> libraries);
-    free(ns -> defined_libs);
-    free(ns -> is_extern_func);
     free(ns);
 }
 
@@ -230,69 +314,9 @@ void lqdCompilerError(lqdCompilerContext* ctx, uint64_t line, int idx_start, int
         fprintf(stderr, "~");
     fprintf(stderr, "\n");
     fprintf(stderr, "│\n");
-    fprintf(stderr, "│ Line: %ld, File: %s\n", line, ctx -> filename);
+    fprintf(stderr, "│ Line: %ld, File: %s (%s:%ld:%i)\n", line, ctx -> filename, ctx -> filename, line, idx_start - idx + 1);
     fprintf(stderr, "╯\n");
     exit(1);
-}
-
-void define_lib(lqdCompilerContext* ctx, char* name) {
-    if (ctx -> namespace -> libraries_vals == ctx -> namespace -> libraries_size) {
-        ctx -> namespace -> libraries_size *= 2;
-        ctx -> namespace -> libraries = realloc(ctx -> namespace -> libraries, ctx -> namespace -> libraries_size * sizeof(lqdNamespace*));
-        ctx -> namespace -> defined_libs = realloc(ctx -> namespace -> defined_libs, ctx -> namespace -> libraries_size * sizeof(char*));
-    }
-    ((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals] = (lqdNamespace*) malloc(sizeof(lqdNamespace));
-    ctx -> namespace -> defined_libs[ctx -> namespace -> libraries_vals] = malloc(strlen(name) + 1);
-    strcpy(ctx -> namespace -> defined_libs[ctx -> namespace -> libraries_vals], name);
-
-    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).defined_funcs = malloc(4 * sizeof(char*));
-    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).func_params = malloc(4 * sizeof(lqdParameterArray*));
-    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).defined_funcs_size = 4;
-    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).defined_funcs_vals = 0;
-    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).is_extern_func = malloc(4);
-
-    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).defined_vars = malloc(4 * sizeof(char*));
-    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).var_types = malloc(4 * sizeof(char*));
-    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).var_init = malloc(4 * sizeof(char));
-    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).defined_vars_size = 4;
-    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).defined_vars_vals = 0;
-
-    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).defined_libs = malloc(4 * sizeof(char*));
-    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).libraries = malloc(4 * sizeof(lqdNamespace*));
-    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).libraries_size = 4;
-    (*(((lqdNamespace**)ctx -> namespace -> libraries)[ctx -> namespace -> libraries_vals])).libraries_vals = 0;
-
-    ctx -> namespace -> libraries_vals++;
-}
-
-void define_func(lqdNamespace* namespace, char* name, lqdParameterArray* params, char is_extern) {
-    if (namespace -> defined_funcs_vals == namespace -> defined_funcs_size) {
-        namespace -> defined_funcs_size *= 2;
-        namespace -> defined_funcs = realloc(namespace -> defined_funcs, namespace -> defined_funcs_size * sizeof(char*));
-        namespace -> func_params = realloc(namespace -> func_params, namespace -> defined_funcs_size * sizeof(lqdParameterArray*));
-        namespace -> is_extern_func = realloc(namespace -> is_extern_func, namespace -> defined_funcs_size);
-    }
-    namespace -> defined_funcs[namespace -> defined_funcs_vals] = malloc(strlen(name) + 1);
-    namespace -> func_params[namespace -> defined_funcs_vals] = params;
-    namespace -> is_extern_func[namespace -> defined_funcs_vals] = is_extern;
-    strcpy(namespace -> defined_funcs[namespace -> defined_funcs_vals], name);
-    namespace -> defined_funcs_vals++;
-}
-
-void define_var(lqdCompilerContext* ctx, char* name, char* type, char initialized) {
-    if (ctx -> namespace -> defined_vars_vals == ctx -> namespace -> defined_vars_size) {
-        ctx -> namespace -> defined_vars_size *= 2;
-        ctx -> namespace -> defined_vars = realloc(ctx -> namespace -> defined_vars, ctx -> namespace -> defined_vars_size * sizeof(char*));
-        ctx -> namespace -> var_types = realloc(ctx -> namespace -> var_types, ctx -> namespace -> defined_vars_size * sizeof(char*));
-        ctx -> namespace -> var_init = realloc(ctx -> namespace -> var_init, ctx -> namespace -> defined_vars_size);
-    }
-    ctx -> namespace -> defined_vars[ctx -> namespace -> defined_vars_vals] = malloc(strlen(name) + 1);
-    ctx -> namespace -> var_types[ctx -> namespace -> defined_vars_vals] = malloc(strlen(type) + 1);
-    ctx -> namespace -> var_init[ctx -> namespace -> defined_vars_vals] = initialized;
-    strcpy(ctx -> namespace -> defined_vars[ctx -> namespace -> defined_vars_vals], name);
-    strcpy(ctx -> namespace -> var_types[ctx -> namespace -> defined_vars_vals], type);
-    ctx -> namespace -> defined_vars_vals++;
-    ctx -> local_vars++;
 }
 
 void strconcat(char** dst, char* src) {
@@ -491,15 +515,15 @@ char* x86_64_String(lqdStringNode* node, lqdCompilerContext* ctx) {
     return str_body;
 };
 char* x86_64_VarAccess(lqdVarAccessNode* node, lqdCompilerContext* ctx) {
-    char id = is_defined(ctx, node -> path -> tokens[0].value);
-    if (!id)
+    lqdVariable var = is_defined(ctx, node -> path -> tokens[0].value);
+    if (var.name == NULL)
         lqdCompilerError(ctx, node -> path -> tokens[0].line, node -> path -> tokens[0].idx_start, node -> path -> tokens[node -> path -> values-1].idx_end, "Undefined variable!");
     char* var_access = malloc(1);
     var_access[0] = 0;
     strconcat(&var_access, "    mov rax, [");
     strconcat(&var_access, node -> path -> tokens[0].value);
-    char* tmp = malloc(12);
-    sprintf(tmp, "%i", id);
+    char* tmp = malloc(20);
+    sprintf(tmp, "%ld", var.id);
     strconcat(&var_access, tmp);
     strconcat(&var_access, "]\n    push rax\n");
     free(tmp);
@@ -617,7 +641,7 @@ char* x86_64_Unary(lqdUnaryOpNode* node, lqdCompilerContext* ctx) {
     return unary;
 };
 char* x86_64_VarDecl(lqdVarDeclNode* node, lqdCompilerContext* ctx, char* namespace) {
-    define_var(ctx, node -> name.value, node -> type.type.value, node -> initialized);
+    lqdVariableArr_push(ctx -> namespace -> vars, *lqdVariable_new(node -> name.value, node -> type.type.value, node -> initialized, ctx -> id));
     char* var_body = malloc(1);
     var_body[0] = 0;
     if (node -> initialized) {
@@ -642,7 +666,7 @@ char* x86_64_VarDecl(lqdVarDeclNode* node, lqdCompilerContext* ctx, char* namesp
     return var_body;
 };
 char* x86_64_FuncDecl(lqdFuncDeclNode* node, lqdCompilerContext* ctx, char* namespace) {
-    define_func(ctx -> namespace, node -> name.value, node -> params, node -> is_extern);
+    lqdFuncArr_push(ctx -> namespace -> funcs, *lqdFunction_new(node -> name.value, node -> ret_type.type.value, node -> params, node -> is_extern));
     char* func_body = malloc(1);
     func_body[0] = 0;
     if (node -> is_extern) {
@@ -691,7 +715,7 @@ char* x86_64_FuncDecl(lqdFuncDeclNode* node, lqdCompilerContext* ctx, char* name
             strconcat(&func_body, id_as_str);
             strconcat(&func_body, "], rax\n");
 
-            define_var(child_ctx, node -> params -> params[i].name.value, "undefined", 1);
+            lqdVariableArr_push(child_ctx -> namespace -> vars, *lqdVariable_new(node -> params -> params[i].name.value, node -> params -> params[i].type.type.value, 1, id));
         }
         free(id_as_str);
         lqdStatementsNode* _stmnts = lqdStatementsNode_new(1);
@@ -724,10 +748,10 @@ char* x86_64_Statements(lqdStatementsNode* node, lqdCompilerContext* ctx) {
     return statements_body;
 };
 char* x86_64_FuncCall(lqdFuncCallNode* node, lqdCompilerContext* ctx) {
-    char found = is_defined_func(ctx, node -> call_path);
-    char is_nested = found == 2;
-    char is_extern = found == 3;
-    if (found == -1)
+    lqdFunction found = is_defined_func(ctx, node -> call_path);
+    char is_nested = 0;
+    char is_extern = found.is_extern;
+    if (found.name == NULL)
         lqdCompilerError(ctx, node -> call_path -> tokens[0].line, node -> call_path -> tokens[0].idx_start, node -> call_path -> tokens[node -> call_path -> values - 1].idx_end, "Undefined function!");
     char* call_body = malloc(1);
     call_body[0] = 0;
@@ -808,21 +832,6 @@ char* x86_64_If(lqdIfNode* node, lqdCompilerContext* ctx) {
     return if_body;
 };
 char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
-    int exists = 0;
-    lqdCompilerContext* current_ctx = ctx;
-    while (current_ctx -> is_child_ctx) {
-        for (uint64_t i = 0; i < current_ctx -> namespace -> defined_vars_vals; i++)
-            if (!strcmp(current_ctx -> namespace -> defined_vars[i], node -> arr -> tokens[0].value)) {
-                exists = 1;
-            }
-        if (!exists) {
-            current_ctx = current_ctx -> parent_ctx;
-        } else {
-            break;
-        }
-    }
-    if (!exists)
-        lqdCompilerError(ctx, node -> arr -> tokens[0].line, node -> arr -> tokens[0].idx_start, node -> arr -> tokens[node -> arr -> values-1].idx_end, "Undefined array!");
     char* for_body = malloc(1);
     for_body[0] = 0;
     char* tmp = malloc(20);
@@ -836,11 +845,11 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
     strconcat(get_glob_section_bss(ctx), tmp2);
     strconcat(get_glob_section_bss(ctx), ": resq 1\n");
     strconcat(&for_body, "    mov rax, [");
-    char id = is_defined(ctx, node -> arr -> tokens[0].value);
-    if (!id)
+    lqdVariable var = is_defined(ctx, node -> arr -> tokens[0].value);
+    if (var.name == NULL)
         lqdCompilerError(ctx, node -> arr -> tokens[0].line, node -> arr -> tokens[0].idx_start, node -> arr -> tokens[0].idx_end, "Array not defined!");
-    char* tmp3 = malloc(8);
-    sprintf(tmp3, "%i", id);
+    char* tmp3 = malloc(12);
+    sprintf(tmp3, "%i", ctx -> id);
     strconcat(&for_body, node -> arr -> tokens[0].value);
     strconcat(&for_body, tmp3);
     free(tmp3);
@@ -873,7 +882,7 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
         sprintf(child_ctx -> for_end, ".for_%li_end", ctx -> comparison - 1);
         child_ctx -> true_for_end = malloc(100);
         sprintf(child_ctx -> true_for_end, ".for_%li_true_end", ctx -> comparison - 1);
-        define_var(child_ctx, node -> iterator.value, "undefined", 1); // TODO: yk
+        lqdVariableArr_push(child_ctx -> namespace -> vars, *lqdVariable_new(node -> iterator.value, "void*", 1, child_ctx -> id));
         child_ctx -> parent_ctx = ctx;
         code = x86_64_compile_statements(stmnts, child_ctx, NULL);
         free(child_ctx -> for_end);
@@ -948,8 +957,8 @@ char* x86_64_While(lqdWhileNode* node, lqdCompilerContext* ctx) {
     return while_body;
 };
 char* x86_64_VarReassign(lqdVarReassignNode* node, lqdCompilerContext* ctx) {
-    int id = is_defined(ctx, node -> var -> tokens[0].value);
-    if (!id)
+    lqdVariable var = is_defined(ctx, node -> var -> tokens[0].value);
+    if (var.name == NULL)
         lqdCompilerError(ctx, node -> var -> tokens[0].line, node -> var -> tokens[0].idx_start, node -> var -> tokens[node -> var -> values-1].idx_end, "Undefined variable!");
     char* var_reassign = malloc(1);
     var_reassign[0] = 0;
@@ -959,7 +968,7 @@ char* x86_64_VarReassign(lqdVarReassignNode* node, lqdCompilerContext* ctx) {
     strconcat(&var_reassign, "    pop rdi\n");
     strconcat(&var_reassign, "    mov rbx, ");
     char* tmp = malloc(12);
-    sprintf(tmp, "%i", id);
+    sprintf(tmp, "%i", var.id);
     strconcat(&var_reassign, node -> var -> tokens[0].value);
     strconcat(&var_reassign, tmp);
     free(tmp);
@@ -1077,9 +1086,14 @@ char* x86_64_Employ(lqdEmployNode* node, lqdCompilerContext* ctx) {
     free(path);
     fclose(file);
 
-    define_lib(ctx, node -> is_aliased ? node -> alias.value : node -> lib_path -> tokens[node -> lib_path -> values - 1].value);
-    for (int i = 0; i < nctx -> namespace -> defined_funcs_vals; i++) {
-        define_func(ctx -> namespace -> libraries[ctx -> namespace -> libraries_vals - 1], nctx -> namespace -> defined_funcs[i], nctx -> namespace -> func_params[i], nctx -> namespace -> is_extern_func[i]);
+    lqdNamespace* namespace = malloc(sizeof(lqdNamespace));
+
+    namespace -> funcs = lqdFuncArr_new(1);
+    namespace -> vars = lqdVariableArr_new(1);
+    namespace -> libs = lqdLibraryArr_new(1);
+    lqdLibraryArr_push(ctx -> namespace -> libs, *lqdLib_new(node -> is_aliased ? node -> alias.value : node -> lib_path -> tokens[node -> lib_path -> values - 1].value, namespace));
+    for (int i = 0; i < nctx -> namespace -> funcs -> values; i++) {
+        lqdFuncArr_push(((lqdNamespace*)(ctx -> namespace -> libs -> libs[ctx -> namespace -> libs -> values - 1].namespace)) -> funcs, nctx -> namespace -> funcs -> funcs[i]);
     }
 
     delete_context(nctx);

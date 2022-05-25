@@ -1,3 +1,13 @@
+/*
+std.sys
+    Author: WoffleTbh
+    Description:
+        Utility for communicating with the kernel
+        via Lyqd    
+    Last revision: 23/05/22 (DD/MM/YY)
+*/
+
+
 extern __x86_64_clyqd_exit(num retcode);
 
 fn exit(num retcode) {
