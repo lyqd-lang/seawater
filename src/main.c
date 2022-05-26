@@ -117,7 +117,7 @@ int main(int argc, char** argv) {
         output_file = dof;
     char* new_code = x86_64_compile(AST, code, source_file);
     char* asmtmp = malloc(100);
-    sprintf(asmtmp, "%slqdtmp.asm", tmp);
+    sprintf(asmtmp, "%s%s.asm", tmp, output_file);
     file = fopen(asmtmp, "w");
     fputs(new_code, file);
     fclose(file);
@@ -136,8 +136,10 @@ int main(int argc, char** argv) {
         remove(obj);
         free(obj);
     }
-    if (!keep_asm)
-        remove("lqdtmp.asm");
+    if (!keep_asm) {
+        sprintf(cmd, "rm %s.asm", output_file);
+        system(cmd);
+    }
     free(object_files);
     free(cmd);
     free(new_code);

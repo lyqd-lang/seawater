@@ -16,15 +16,17 @@ typedef struct {
 } lqdVariable;
 
 typedef struct {
-    lqdVariable* vars;
+    lqdVariable** vars;
     int values;
     int size;
 } lqdVariableArr;
 
 lqdVariable* lqdVariable_new(char* name, char* type, char initialized, uint64_t id) {
     lqdVariable* var = malloc(sizeof(lqdVariable));
-    var -> name = name;
-    var -> type = type;
+    var -> name = malloc(strlen(name) + 1);
+    strcpy(var -> name, name);
+    var -> type = malloc(strlen(type) + 1);
+    strcpy(var -> type, type);
     var -> initialized = initialized;
     var -> id = id;
     var -> element_type = NULL;
@@ -34,7 +36,7 @@ lqdVariable* lqdVariable_new(char* name, char* type, char initialized, uint64_t 
 
 lqdVariableArr* lqdVariableArr_new(int size) {
     lqdVariableArr* arr = malloc(sizeof(lqdVariableArr));
-    arr -> vars = malloc(size * sizeof(lqdVariable));
+    arr -> vars = malloc(size * sizeof(lqdVariable*));
     arr -> size = size;
     arr -> values = 0;
     return arr;
@@ -43,13 +45,23 @@ lqdVariableArr* lqdVariableArr_new(int size) {
 void lqdVariableArr_push(lqdVariableArr* arr, lqdVariable var) {
     if (arr -> values == arr -> size) {
         arr -> size *= 2;
-        arr -> vars = realloc(arr -> vars, arr -> size * sizeof(lqdVariable));
+        arr -> vars = realloc(arr -> vars, arr -> size * sizeof(lqdVariable*));
         if (arr -> vars == NULL) {
             fprintf(stderr, "Ran out of memory!\n");
             exit(1);
         }
     }
-    arr -> vars[arr -> values++] = var;
+    lqdVariable* _var = lqdVariable_new(var.name, var.type, var.initialized, var.id);
+    if (var.is_arr) {
+        _var -> is_arr = 1;
+        _var -> element_type = malloc(strlen(var.element_type) + 1);
+        strcpy(_var -> element_type, var.element_type);
+    }
+    free(var.name);
+    free(var.type);
+    if (var.is_arr)
+        free(var.element_type);
+    arr -> vars[arr -> values++] = _var;
 }
 
 typedef struct {
@@ -57,19 +69,24 @@ typedef struct {
     char* ret_type;
     lqdParameterArray* params;
     char is_extern;
+    char is_void;
 } lqdFunction;
 
 typedef struct {
-    lqdFunction* funcs;
+    lqdFunction** funcs;
     int values;
     int size;
 } lqdFuncArr;
 
-lqdFunction* lqdFunction_new(char* name, char* ret_type, lqdParameterArray* params, char is_extern) {
+lqdFunction* lqdFunction_new(char* name, char* ret_type, lqdParameterArray* params, char is_extern, char is_void) {
     lqdFunction* func = malloc(sizeof(lqdFunction));
     func -> name = malloc(strlen(name) + 1);
     strcpy(func -> name, name);
-    func -> ret_type = ret_type;
+    if (!is_void) {
+        func -> ret_type = malloc(strlen(ret_type) + 1);
+        strcpy(func -> ret_type, ret_type);
+    }
+    func -> is_void = is_void;
     func -> params = params;
     func -> is_extern = is_extern;
     return func;
@@ -77,22 +94,29 @@ lqdFunction* lqdFunction_new(char* name, char* ret_type, lqdParameterArray* para
 
 lqdFuncArr* lqdFuncArr_new(int size) {
     lqdFuncArr* arr = malloc(sizeof(lqdFuncArr));
-    arr -> funcs = malloc(size * sizeof(lqdFunction));
+    arr -> funcs = malloc(size * sizeof(lqdFunction*));
     arr -> size = size;
     arr -> values = 0;
     return arr;
 }
 
-void lqdFuncArr_push(lqdFuncArr* arr, lqdFunction func) {
+void lqdFuncArr_push(lqdFuncArr* arr, lqdFunction* func) {
     if (arr -> values == arr -> size) {
         arr -> size *= 2;
-        arr -> funcs = realloc(arr -> funcs, arr -> size * sizeof(lqdFunction));
+        arr -> funcs = realloc(arr -> funcs, arr -> size * sizeof(lqdFunction*));
         if (arr -> funcs == NULL) {
             fprintf(stderr, "Ran out of memory!\n");
             exit(1);
         }
     }
-    arr -> funcs[arr -> values++] = func;
+    lqdParameterArray* params = lqdParameterArray_new(1);
+    for (int i = 0; i < func -> params -> values; i++)
+        lqdParameterArray_push(params, func -> params -> params[i]);
+    lqdFunction* _func = lqdFunction_new(func -> name, func -> ret_type, params, func -> is_extern, func -> is_void);
+    free(func -> name);
+    if (!func -> is_void)
+        free(func -> ret_type);
+    arr -> funcs[arr -> values++] = _func;
 }
 
 typedef struct {
@@ -101,7 +125,7 @@ typedef struct {
 } lqdLib;
 
 typedef struct {
-    lqdLib* libs;
+    lqdLib** libs;
     int values;
     int size;
 } lqdLibraryArr;
@@ -121,7 +145,7 @@ lqdLibraryArr* lqdLibraryArr_new(int size) {
     return arr;
 }
 
-void lqdLibraryArr_push(lqdLibraryArr* arr, lqdLib lib) {
+void lqdLibraryArr_push(lqdLibraryArr* arr, lqdLib* lib) {
     if (arr -> values == arr -> size) {
         arr -> size *= 2;
         arr -> libs = realloc(arr -> libs, arr -> size * sizeof(lqdLib));
@@ -168,6 +192,10 @@ typedef struct {
 
     uint64_t comparison;
 
+    lqdTokenArray* toks;
+    lqdStatementsNode* employ_discard;
+
+    // TODO: implement this
     char returns;
 } lqdCompilerContext;
 
@@ -205,9 +233,9 @@ lqdVariable is_defined(lqdCompilerContext* ctx, char* name) {
     lqdCompilerContext* current_ctx = ctx;
     while (current_ctx -> is_child_ctx) {
         for (uint64_t i = 0; i < current_ctx -> namespace -> vars -> values; i++) {
-            if (!strcmp(current_ctx -> namespace -> vars -> vars[i].name, name)) {
+            if (!strcmp(current_ctx -> namespace -> vars -> vars[i] -> name, name)) {
                 exists = current_ctx -> id;
-                var = current_ctx -> namespace -> vars -> vars[i];
+                var = *current_ctx -> namespace -> vars -> vars[i];
             }
         }
         if (!exists) {
@@ -226,9 +254,9 @@ lqdFunction is_defined_func(lqdCompilerContext* ctx, lqdTokenArray* path) {
         char searching = 1;
         while (searching) {
             for (int i = 0; i < current_ctx -> namespace -> funcs -> values; i++) {
-                if (!strcmp(current_ctx -> namespace -> funcs -> funcs[i].name, path -> tokens[0].value)) {
+                if (!strcmp(current_ctx -> namespace -> funcs -> funcs[i] -> name, path -> tokens[0].value)) {
                     searching = 0;
-                    func = current_ctx -> namespace -> funcs -> funcs[i];
+                    func = *current_ctx -> namespace -> funcs -> funcs[i];
                 }
             }
             if (searching) {
@@ -247,10 +275,10 @@ lqdFunction is_defined_func(lqdCompilerContext* ctx, lqdTokenArray* path) {
     char searching = 1;
     while (searching) {
         for (int i = 0; i < current_ctx -> namespace -> libs -> values; i++) {
-            if (!strcmp(current_ctx -> namespace -> libs -> libs[i].name, path -> tokens[i].value)) {
+            if (!strcmp(current_ctx -> namespace -> libs -> libs[i] -> name, path -> tokens[i].value)) {
                 searching = 0;
                 found = 1;
-                currentns = current_ctx -> namespace  -> libs -> libs[i].namespace;
+                currentns = current_ctx -> namespace  -> libs -> libs[i] -> namespace;
             }
         }
         if (searching) {
@@ -264,7 +292,7 @@ lqdFunction is_defined_func(lqdCompilerContext* ctx, lqdTokenArray* path) {
     found = 0;
     for (int i = 1; i < path -> values - 1; i++) {
         for (int j = 0; j < current_ctx -> namespace -> libs -> values; j++) {
-            if (!strcmp(current_ctx -> namespace -> libs -> libs[j].name, path -> tokens[i].value)) {
+            if (!strcmp(current_ctx -> namespace -> libs -> libs[j] -> name, path -> tokens[i].value)) {
                 found = 1;
                 currentns = current_ctx -> namespace;
             }
@@ -275,19 +303,38 @@ lqdFunction is_defined_func(lqdCompilerContext* ctx, lqdTokenArray* path) {
     }
     if (path -> values - 2 && !found) return func;
     for (int i = 0; i < currentns -> funcs -> values; i++) {
-        if (!strcmp(currentns -> funcs -> funcs[i].name, path -> tokens[path -> values - 1].value)) {
-            func = currentns -> funcs -> funcs[i];
+        if (!strcmp(currentns -> funcs -> funcs[i] -> name, path -> tokens[path -> values - 1].value)) {
+            func = *currentns -> funcs -> funcs[i];
         }
     }
     return func;
 }
 
 void delete_namespace(lqdNamespace* ns) {
-    for (int i = 0; i < ns -> libs -> values; i++) {
-        delete_namespace(ns -> libs -> libs[i].namespace);
+    for (int i = 0; i < ns -> vars -> values; i++) {
+        free(ns -> vars -> vars[i] -> name);
+        free(ns -> vars -> vars[i] -> type);
+        if (ns -> vars -> vars[i] -> is_arr)
+            free(ns -> vars -> vars[i] -> element_type);
+        free(ns -> vars -> vars[i]);
     }
-    free(ns -> libs);
+    for (int i = 0; i < ns -> funcs -> values; i++) {
+        free(ns -> funcs -> funcs[i] -> name);
+        if (!ns -> funcs  -> funcs[i] -> is_void)
+            free(ns -> funcs -> funcs[i] -> ret_type);
+        lqdParameterArray_delete(ns -> funcs -> funcs[i] -> params);
+        free(ns -> funcs -> funcs[i]);
+    }
+    free(ns -> funcs -> funcs);
+    free(ns -> funcs);
+    free(ns -> vars -> vars);
     free(ns -> vars);
+    for (int i = 0; i < ns -> libs -> values; i++) {
+        delete_namespace(ns -> libs -> libs[i] -> namespace);
+        free(ns -> libs -> libs[i]);
+    }
+    free(ns -> libs -> libs);
+    free(ns -> libs);
     free(ns);
 }
 
@@ -557,7 +604,7 @@ char* get_type(lqdCompilerContext* ctx, lqdASTNode value) {
     } else if (value.type == NT_String) {
         return "str";
     } else if (value.type == NT_BinOp) {
-        get_type(ctx, ((lqdBinOpNode*)value.node) -> left);
+        return get_type(ctx, ((lqdBinOpNode*)value.node) -> left);
     } else if (value.type == NT_Char) {
         return "chr";
     } else if (value.type == NT_VarAccess) {
@@ -568,8 +615,11 @@ char* get_type(lqdCompilerContext* ctx, lqdASTNode value) {
     } else if (value.type == NT_FuncCall) {
         lqdFunction callee = is_defined_func(ctx, ((lqdFuncCallNode*)value.node) -> call_path);
         return callee.ret_type;
+    } else if (value.type == NT_Unary) {
+        return get_type(ctx, ((lqdUnaryOpNode*)value.node) -> value);
     } else {
         fprintf(stderr, "Unhandled: %i\n", value.type);
+        exit(1);
     }
     return NULL;
 }
@@ -589,6 +639,7 @@ lqdToken get_tok(lqdASTNode value) {
         return ((lqdFuncCallNode*)value.node) -> call_path -> tokens[((lqdFuncCallNode*)value.node) -> call_path -> values - 1];
     } else {
         fprintf(stderr, "Unhandled: %i\n", value.type);
+        exit(1);
     }
     lqdToken tok = {};
     return tok;
@@ -597,8 +648,8 @@ lqdToken get_tok(lqdASTNode value) {
 char* x86_64_BinOp(lqdBinOpNode* node, lqdCompilerContext* ctx) {
     char* binop = malloc(1);
     binop[0] = 0;
-    //if (strcmp(get_type(ctx, node -> left), get_type(ctx, node -> right)))
-    //    lqdCompilerError(ctx, get_tok(node -> left).line, get_tok(node -> left).idx_start, get_tok(node -> right).idx_end, "Can't perform an operation on different types");
+    if (strcmp(get_type(ctx, node -> left), get_type(ctx, node -> right)))
+        lqdCompilerError(ctx, get_tok(node -> left).line, get_tok(node -> left).idx_start, get_tok(node -> right).idx_end, "Can't perform an operation on different types");
     char* tmp = x86_64_compile_stmnt(node -> left, ctx);
     strconcat(&binop, tmp);
     free(tmp);
@@ -718,24 +769,27 @@ char* x86_64_VarDecl(lqdVarDeclNode* node, lqdCompilerContext* ctx, char* namesp
     free(tmp);
     strconcat(&var_body, "], rax\n");
     
-    lqdVariable var = *lqdVariable_new(node -> name.value, node -> type.type.value, node -> initialized, ctx -> id);
+    lqdVariable* var = lqdVariable_new(node -> name.value, node -> type.type.value, node -> initialized, ctx -> id);
     
     if (!strcmp(node -> type.type.value, "str")) {
-        var.is_arr = 1;
-        var.element_type = malloc(4);
-        strcpy(var.element_type, "chr");
+        var -> is_arr = 1;
+        var -> element_type = malloc(4);
+        strcpy(var -> element_type, "chr");
     } else if (!strcmp(node -> type.type.value, "arr")) {
-        var.is_arr = 1;
-        var.element_type = malloc(strlen(node -> element_type.value)+1);
-        strcpy(var.element_type, node -> element_type.value);
+        var -> is_arr = 1;
+        var -> element_type = malloc(strlen(node -> element_type.value)+1);
+        strcpy(var -> element_type, node -> element_type.value);
     }
 
-    lqdVariableArr_push(ctx -> namespace -> vars, var);
+    lqdVariableArr_push(ctx -> namespace -> vars, *var);
+    free(var);
     
     return var_body;
 };
 char* x86_64_FuncDecl(lqdFuncDeclNode* node, lqdCompilerContext* ctx, char* namespace) {
-    lqdFuncArr_push(ctx -> namespace -> funcs, *lqdFunction_new(node -> name.value, node -> ret_type.type.value, node -> params, node -> is_extern));
+    lqdFunction* func = lqdFunction_new(node -> name.value, node -> ret_type.type.value, node -> params, node -> is_extern, node -> is_void);
+    lqdFuncArr_push(ctx -> namespace -> funcs, func);
+    free(func);
     char* func_body = malloc(1);
     func_body[0] = 0;
     if (node -> is_extern) {
@@ -784,21 +838,22 @@ char* x86_64_FuncDecl(lqdFuncDeclNode* node, lqdCompilerContext* ctx, char* name
             strconcat(&func_body, id_as_str);
             strconcat(&func_body, "], rax\n");
 
-            lqdVariable var = *lqdVariable_new(node -> params -> params[i].name.value, node -> params -> params[i].type.type.value, 1, id);
+            lqdVariable* var = lqdVariable_new(node -> params -> params[i].name.value, node -> params -> params[i].type.type.value, 1, id);
 
             if (!strcmp(node -> params -> params[i].type.type.value, "str") || !strcmp(node -> params -> params[i].type.type.value, "arr")) {
-                var.is_arr = 1;
+                var -> is_arr = 1;
                 if (!strcmp(node -> params -> params[i].type.type.value, "str")) {
-                    var.is_arr = 1;
-                    var.element_type = malloc(4);
-                    strcpy(var.element_type, "chr");
+                    var -> is_arr = 1;
+                    var -> element_type = malloc(4);
+                    strcpy(var -> element_type, "chr");
                 } else if (!strcmp(node -> params -> params[i].type.type.value, "arr")) {
-                    var.is_arr = 1;
-                    var.element_type = malloc(strlen(node -> params -> params[i].element_type.value)+1);
-                    strcpy(var.element_type, node -> params -> params[i].element_type.value);
+                    var -> is_arr = 1;
+                    var -> element_type = malloc(strlen(node -> params -> params[i].element_type.value)+1);
+                    strcpy(var -> element_type, node -> params -> params[i].element_type.value);
                 }
             }
-            lqdVariableArr_push(child_ctx -> namespace -> vars, var);
+            lqdVariableArr_push(child_ctx -> namespace -> vars, *var);
+            free(var);
         }
         free(id_as_str);
         lqdStatementsNode* _stmnts = lqdStatementsNode_new(1);
@@ -974,7 +1029,9 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
         if (!arr.is_arr)
             lqdCompilerError(ctx, node -> arr -> tokens[0].line, node -> arr -> tokens[0].idx_start, node -> arr -> tokens[0].idx_end, "Expected array or string!");
 
-        lqdVariableArr_push(child_ctx -> namespace -> vars, *lqdVariable_new(node -> iterator.value, arr.element_type, 1, child_ctx -> id));
+        lqdVariable* var = lqdVariable_new(node -> iterator.value, arr.element_type, 1, child_ctx -> id);
+        lqdVariableArr_push(child_ctx -> namespace -> vars, *var);
+        free(var);
         child_ctx -> parent_ctx = ctx;
         code = x86_64_compile_statements(stmnts, child_ctx, NULL);
         free(child_ctx -> for_end);
@@ -1183,15 +1240,34 @@ char* x86_64_Employ(lqdEmployNode* node, lqdCompilerContext* ctx) {
     namespace -> funcs = lqdFuncArr_new(1);
     namespace -> vars = lqdVariableArr_new(1);
     namespace -> libs = lqdLibraryArr_new(1);
-    lqdLibraryArr_push(ctx -> namespace -> libs, *lqdLib_new(node -> is_aliased ? node -> alias.value : node -> lib_path -> tokens[node -> lib_path -> values - 1].value, namespace));
+    lqdLibraryArr_push(ctx -> namespace -> libs, lqdLib_new(node -> is_aliased ? node -> alias.value : node -> lib_path -> tokens[node -> lib_path -> values - 1].value, namespace));
     for (int i = 0; i < nctx -> namespace -> funcs -> values; i++) {
-        lqdFuncArr_push(((lqdNamespace*)(ctx -> namespace -> libs -> libs[ctx -> namespace -> libs -> values - 1].namespace)) -> funcs, nctx -> namespace -> funcs -> funcs[i]);
+        lqdFuncArr_push(((lqdNamespace*)(ctx -> namespace -> libs -> libs[ctx -> namespace -> libs -> values - 1] -> namespace)) -> funcs, nctx -> namespace -> funcs -> funcs[i]);
+        lqdParameterArray_delete(nctx -> namespace -> funcs -> funcs[i] -> params);
+        free(nctx -> namespace -> funcs -> funcs[i]);
     }
 
-    delete_context(nctx);
+    free(nctx -> section_data);
+    free(nctx -> section_bss);
+    free(nctx -> lib_name);
+    free(nctx -> namespace -> funcs -> funcs);
+    free(nctx -> namespace -> funcs);
+    free(nctx -> namespace -> libs -> libs);
+    free(nctx -> namespace -> libs);
+    free(nctx -> namespace -> vars -> vars);
+    free(nctx -> namespace -> vars);
+    free(nctx -> namespace);
+    free(nctx);
     free(code);
-    //lqdTokenArray_delete(tokens);
-    //lqdStatementsNode_delete(AST);
+    for (int i = 0; i < tokens -> values; i++) {
+        lqdTokenArray_push(cc -> toks, tokens -> tokens[i]);
+    }
+    free(tokens -> tokens);
+    free(tokens);
+    for (int i = 0; i < AST -> values; i++)
+        lqdStatementsNode_push(cc -> employ_discard, AST -> statements[i]);
+    free(AST -> statements);
+    free(AST);
     return employee;
 };
 
@@ -1335,6 +1411,8 @@ char* x86_64_compile(lqdStatementsNode* statements, char* code, char* filename) 
     char* section_text = malloc(1);
     lqdCompilerContext* ctx = create_context(code, filename, 0, 0);
     section_text[0] = 0;
+    ctx -> toks = lqdTokenArray_new(1);
+    ctx -> employ_discard = lqdStatementsNode_new(1);
     
     char* _code = x86_64_compile_statements(statements, ctx, NULL);
     strconcat(&section_text, _code);
@@ -1359,13 +1437,16 @@ char* x86_64_compile(lqdStatementsNode* statements, char* code, char* filename) 
 #else
     strconcat(&final_code, "global _start\n");
     strconcat(&final_code, "_start:\n");
-#endif
     strconcat(&final_code, "    call main\n");
     strconcat(&final_code, "    mov rax, 60\n");
     strconcat(&final_code, "    mov rdi, 0\n");
     strconcat(&final_code, "    syscall\n");
+#endif
     strconcat(&final_code, section_text);
 
+    lqdStatementsNode_delete(ctx -> employ_discard);
+
+    lqdTokenArray_delete(ctx -> toks);
     delete_context(ctx);
     free(section_text);
     free(section_data);

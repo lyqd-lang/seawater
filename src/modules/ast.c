@@ -109,6 +109,8 @@ void lqdASTNode_delete(lqdASTNode node) {
             free(((lqdVarReassignNode*)node.node) -> var -> tokens);
             free(((lqdVarReassignNode*)node.node) -> var);
             lqdASTNode_delete(((lqdVarReassignNode*)node.node) -> value);
+            if (((lqdVarReassignNode*)node.node) -> has_slice)
+                lqdASTNode_delete(((lqdVarReassignNode*)node.node) -> slice);
             free((lqdVarReassignNode*)node.node);
             break;
         case NT_Construct:
