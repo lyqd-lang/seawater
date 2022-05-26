@@ -5,7 +5,7 @@ std.io
         A simple library providing a lyqd frontend
         for communication with the terminal
         (or commandline on windows)
-    Last revision: 23/05/22 (DD/MM/YY)
+    Last revision: 26/05/22 (DD/MM/YY)
 */
 
 employ std.sys;
@@ -38,7 +38,7 @@ fn putn(num number) {
         number = number / 10;
         pos = pos + 1;
     }
-    num i = 11;
+    num i = 19;
     while i > -1 {
         if string[i] != ' ' {
             putc(string[i]);

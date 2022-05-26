@@ -4,7 +4,7 @@ std.sys
     Description:
         Utility for communicating with the kernel
         via Lyqd
-    Last revision: 23/05/22 (DD/MM/YY)
+    Last revision: 26/05/22 (DD/MM/YY)
 */
 
 
