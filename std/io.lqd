@@ -8,10 +8,10 @@ std.io
     Last revision: 23/05/22 (DD/MM/YY)
 */
 
-extern __x86_64_clyqd_fputc(num fd, chr byte);
+employ std.sys;
 
 fn putc(chr char) {
-    __x86_64_clyqd_fputc(1, char);
+    sys.fputc(1, char);
 }
 
 fn puts(str string) {

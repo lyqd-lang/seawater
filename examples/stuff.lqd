@@ -1,10 +1,6 @@
-employ std.io;
-
-fn add(num a, num b) -> num {
-    return a + b;
-}
+employ std.io -> stdio;
 
 fn main() {
-    io.putn(add(100, 200));
-    io.putc(10);
+    str test = "abc\0def";
+    stdio.println(test);
 }
