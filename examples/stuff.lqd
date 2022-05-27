@@ -1,6 +1,5 @@
 employ std.io;
 
 fn main() {
-    str test = "hello";
-    io.println(test);
+    io.println("Hello, world!");
 }

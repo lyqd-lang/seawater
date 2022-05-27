@@ -1056,20 +1056,22 @@ char* x86_64_VarReassign(lqdVarReassignNode* node, lqdCompilerContext* ctx) {
     strconcat(&var_reassign, tmp2);
     free(tmp2);
     strconcat(&var_reassign, "    pop rdi\n");
-    strconcat(&var_reassign, "    mov rbx, [rbp-");
+    strconcat(&var_reassign, "    lea rbx, [rbp-");
     char* tmp = malloc(12);
-    sprintf(tmp, "%li", var.stack_pos * 8);
+    sprintf(tmp, "%li", (var.stack_pos + 1) * 8);
     strconcat(&var_reassign, tmp);
-    free(tmp);
     strconcat(&var_reassign, "]\n");
     if (node -> has_slice) {
-        strconcat(&var_reassign, "    mov rsi, [rbx]\n");
+        strconcat(&var_reassign, "    mov rsi, heap\n");
+        strconcat(&var_reassign, "    add rsi, [rbx]\n");
         char* tmp = x86_64_compile_stmnt(node -> slice, ctx);
         strconcat(&var_reassign, tmp);
         strconcat(&var_reassign, "    pop rax\n");
-        strconcat(&var_reassign, "    xor rdx, rdx\n");
-        strconcat(&var_reassign, "    mov rcx, 8\n");
-        strconcat(&var_reassign, "    imul rcx\n");
+        if (strcmp("str", var.type)) {
+            strconcat(&var_reassign, "    xor rdx, rdx\n");
+            strconcat(&var_reassign, "    mov rcx, 8\n");
+            strconcat(&var_reassign, "    imul rcx\n");
+        }
         strconcat(&var_reassign, "    lea rbx, [rsi+16+rax]\n");    
         free(tmp);
     }

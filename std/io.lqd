@@ -26,16 +26,17 @@ fn println(str string) {
 }
 
 fn putn(num number) {
-    if number < 0 {
+    num new_num = number;
+    if new_num < 0 {
         putc(45);
-        number = number - number * 2;
+        new_num = new_num - new_num * 2;
     }
-    str string = 20[]; // allocate 20 bytes, enough to store a 64bit integer
+    arr:chr string = 20[]; // allocate 20 bytes, enough to store a 64bit integer
     num pos = 0;
     str nums = "0123456789";
-    while number > 0 {
-        string[pos] = nums[number % 10];
-        number = number / 10;
+    while new_num > 0 {
+        string[pos] = nums[new_num % 10];
+        new_num = new_num / 10;
         pos = pos + 1;
     }
     num i = 19;
@@ -50,5 +51,7 @@ fn putn(num number) {
 fn putarr(arr:num array) {
     for i in array {
         putn(i);
+        puts(", ");
     }
+    putc(10);
 }
