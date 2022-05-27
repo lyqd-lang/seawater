@@ -1,0 +1,5 @@
+employ std.io -> stdio;
+
+fn main() {
+    stdio.println("Hello, World!");
+}
