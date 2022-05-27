@@ -10,11 +10,21 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     steps:
-      - name: checkout the code
+      - name: Checkout the repo
         uses: actions/checkout@v3
-      - name: install dependencies
+      - name: Install build dependencies
         run: sudo apt-get -y install build-essential python3 nasm
-      - name: compile the compiler
+      - name: Compile the compiler
         run: python3 build.py
-      - name: run tests
+      - name: Run tests
         run: python3 test.py
+      - name: Create build_artifacts
+        run: mkdir -p build_artifacts
+      - name: Copy artifacts
+        run: cp -r bin build_artifacts && cp -r std build_artifacts
+      - name: Publish artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: lyqd
+          path: build_artifacts
+          
