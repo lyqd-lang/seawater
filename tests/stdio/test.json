@@ -1,0 +1,9 @@
+{
+    "entry": "main.lqd",
+    "compiler_exit_code": 0,
+    "program_exit_code": 0,
+    "compiler_args": [],
+    "program_args": [],
+    "expected_output": "output.txt",
+    "expected_compiler_output": "compiler_output.txt"
+}

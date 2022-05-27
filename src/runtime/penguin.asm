@@ -5,13 +5,17 @@ section .bss
 section .text
 global __x86_64_clyqd_fputc
 __x86_64_clyqd_fputc:
-    mov rax, [rsp + 16]
-    mov [tmp_str], rax
+    xor rax, rax
+    mov al, byte [rsp + 16]
+    mov [tmp_str], al
+    cmp al, 0
+    je .end
     mov rax, 1
     mov rdi, [rsp + 8]
     mov rsi, tmp_str
     mov rdx, 1
     syscall
+.end:
     ret
 
 global __x86_64_clyqd_exit

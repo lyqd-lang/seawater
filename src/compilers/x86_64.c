@@ -537,7 +537,10 @@ char* x86_64_VarAccess(lqdVarAccessNode* node, lqdCompilerContext* ctx) {
         char* tmp2 = x86_64_compile_stmnt(node -> slice, ctx);
         strconcat(&var_access, tmp2);
         strconcat(&var_access, "    pop rax\n");
-        strconcat(&var_access, "    mov rbx, [heap+rdx+16+rax]\n");
+        if (!strcmp(var.type, "str"))
+            strconcat(&var_access, "    mov rbx, [heap+rdx+16+rax]\n");
+        else
+            strconcat(&var_access, "    mov rbx, qword [heap+rdx+16+rax]\n");
         strconcat(&var_access, "    push rbx\n");
         free(tmp2);
     }
@@ -595,7 +598,11 @@ lqdToken get_tok(lqdASTNode value) {
 char* x86_64_BinOp(lqdBinOpNode* node, lqdCompilerContext* ctx) {
     char* binop = malloc(1);
     binop[0] = 0;
-    if (strcmp(get_type(ctx, node -> left), get_type(ctx, node -> right)))
+    char type_matching = 0;
+    type_matching = !strcmp(get_type(ctx, node -> left), get_type(ctx, node -> right));
+    type_matching = type_matching || !strcmp(get_type(ctx, node -> left), "chr") && !strcmp(get_type(ctx, node -> right), "num");
+    type_matching = type_matching || !strcmp(get_type(ctx, node -> left), "num") && !strcmp(get_type(ctx, node -> right), "chr");
+    if (!type_matching)
         lqdCompilerError(ctx, get_tok(node -> left).line, get_tok(node -> left).idx_start, get_tok(node -> right).idx_end, "Can't perform an operation on different types");
     char* tmp = x86_64_compile_stmnt(node -> left, ctx);
     strconcat(&binop, tmp);

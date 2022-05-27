@@ -1,0 +1,11 @@
+employ std.io -> stdio;
+
+fn main() {
+    stdio.putn(123);
+    stdio.putc(10);
+    stdio.putn(-123);
+    stdio.putc(10);
+    stdio.puts("Hello, world!");
+    stdio.putc(10);
+    stdio.println("Hello, world!");
+}
