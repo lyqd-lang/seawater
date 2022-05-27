@@ -1,0 +1,19 @@
+name: Run compiler tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    - name: checkout the code
+      uses: actions/checkout@v3
+    - name: install dependencies
+      run: apt-get -y install base-devel python3 
+    - name: compile the compiler
+      run: python3 build.py
+    - name: run tests
+      run: python3 test.py
