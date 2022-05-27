@@ -13,6 +13,7 @@ typedef struct {
     uint64_t id;
     char is_arr;
     char* element_type;
+    uint64_t stack_pos;
 } lqdVariable;
 
 typedef struct {
@@ -21,7 +22,7 @@ typedef struct {
     int size;
 } lqdVariableArr;
 
-lqdVariable* lqdVariable_new(char* name, char* type, char initialized, uint64_t id) {
+lqdVariable* lqdVariable_new(char* name, char* type, char initialized, uint64_t id, uint64_t stack_pos) {
     lqdVariable* var = malloc(sizeof(lqdVariable));
     var -> name = malloc(strlen(name) + 1);
     strcpy(var -> name, name);
@@ -31,6 +32,7 @@ lqdVariable* lqdVariable_new(char* name, char* type, char initialized, uint64_t 
     var -> id = id;
     var -> element_type = NULL;
     var -> is_arr = 0;
+    var -> stack_pos = stack_pos;
     return var;
 }
 
@@ -51,7 +53,7 @@ void lqdVariableArr_push(lqdVariableArr* arr, lqdVariable var) {
             exit(1);
         }
     }
-    lqdVariable* _var = lqdVariable_new(var.name, var.type, var.initialized, var.id);
+    lqdVariable* _var = lqdVariable_new(var.name, var.type, var.initialized, var.id, var.stack_pos);
     if (var.is_arr) {
         _var -> is_arr = 1;
         _var -> element_type = malloc(strlen(var.element_type) + 1);
@@ -444,130 +446,77 @@ char* x86_64_Char(lqdCharNode* node, lqdCompilerContext* ctx) {
 char* x86_64_Array(lqdArrayNode* node, lqdCompilerContext* ctx) {
     char* arr_body = malloc(1);
     arr_body[0] = 0;
-    // Note to self bcuz I'm prolly gonna forget what this code does:
-    //  - Allocate memory for the existing elements (times 2)
-    //  - Put all the elements into the array
-    //  - Create C-style size and value counters (uint64_t)
-    lqdCompilerContext* top_lvl_ctx = ctx;
-    while (top_lvl_ctx -> is_child_ctx)top_lvl_ctx = top_lvl_ctx -> parent_ctx;
-    char* tmp = malloc(8);
-    sprintf(tmp, "%li", ++top_lvl_ctx -> defined_arrays);
-    char* tmp5 = malloc(8);
-    sprintf(tmp5, "%li", node -> values -> values);
-    strconcat(get_glob_section_bss(ctx), "    arr");
-    strconcat(get_glob_section_bss(ctx), tmp);
-    strconcat(get_glob_section_bss(ctx), ":");
-    strconcat(get_glob_section_bss(ctx), "\n        arr");
-    strconcat(get_glob_section_bss(ctx), tmp);
-    strconcat(get_glob_section_bss(ctx), "values: resq 1\n");
-    strconcat(get_glob_section_bss(ctx), "        arr");
-    strconcat(get_glob_section_bss(ctx), tmp);
-    strconcat(get_glob_section_bss(ctx), "size: resq 1\n");
-    strconcat(get_glob_section_bss(ctx), "        arr");
-    strconcat(get_glob_section_bss(ctx), tmp);
-    strconcat(get_glob_section_bss(ctx), "elements: resq ");
-    char* tmp2 = malloc(8);
-    if (!node -> is_reserved)
-        sprintf(tmp2, "%li", node -> values -> size);
+    strconcat(&arr_body, "    push qword [next_free]\n");
+    strconcat(&arr_body, "    lea r11, [heap]\n");
+    strconcat(&arr_body, "    add r11, [next_free]\n");
+    strconcat(&arr_body, "    add qword [next_free], 16\n");
+    char* tmp = malloc(20);
+    if (node -> is_reserved)
+        strcpy(tmp, node -> reserved.value);
     else
-        strcpy(tmp2, node -> reserved.value);
-    strconcat(get_glob_section_bss(ctx), tmp2);
-    strconcat(get_glob_section_bss(ctx), "\n");
-    for (uint64_t i = 0; i < node -> values -> values; i++) {
-        char* tmp3 = x86_64_compile_stmnt(node -> values -> statements[i], ctx);
-        strconcat(&arr_body, tmp3);
-        free(tmp3);
-        strconcat(&arr_body, "    pop rax\n");
-        strconcat(&arr_body, "    mov [arr");
-        strconcat(&arr_body, tmp);
-        strconcat(&arr_body, "elements+");
-        char* tmp4 = malloc(8);
-        tmp4[0] = 0;
-        sprintf(tmp4, "%ld", i * 8);
-        strconcat(&arr_body, tmp4);
-        free(tmp4);
-        strconcat(&arr_body, "], rax\n");
-    }
-    strconcat(&arr_body, "    mov rax, ");
+        sprintf(tmp, "%ld", node -> values -> size * 8);
+    strconcat(&arr_body, "    add qword [next_free], ");
+    strconcat(&arr_body, tmp);
+    strconcat(&arr_body, "\n");
+    strconcat(&arr_body, "    mov qword [r11], ");
+    strconcat(&arr_body, tmp);
+    strconcat(&arr_body, "\n");
+    char* tmp2 = malloc(20);
+    sprintf(tmp2, "%ld", node -> values -> values * 8);
+    strconcat(&arr_body, "    mov qword [r11+8], ");
     strconcat(&arr_body, tmp2);
     strconcat(&arr_body, "\n");
-    strconcat(&arr_body, "    mov [arr");
-    strconcat(&arr_body, tmp);
-    strconcat(&arr_body, "size], rax\n");
-    strconcat(&arr_body, "    mov rax, ");
-    strconcat(&arr_body, tmp5);
-    strconcat(&arr_body, "\n");
-    strconcat(&arr_body, "    mov [arr");
-    strconcat(&arr_body, tmp);
-    strconcat(&arr_body, "values], rax\n");
-    strconcat(&arr_body, "    push arr");
-    strconcat(&arr_body, tmp);
-    strconcat(&arr_body, "\n");
-    free(tmp2);
-    free(tmp5);
+    for (int i = 0; i < node -> values -> values; i++) {
+        char* tmp3 = malloc(20);
+        sprintf(tmp3, "%i", (i + 2) * 8);
+        char* tmp4 = x86_64_compile_stmnt(node -> values -> statements[i], ctx);
+        strconcat(&arr_body, tmp4);
+        free(tmp4);
+        strconcat(&arr_body, "    pop rax\n");
+        strconcat(&arr_body, "    mov qword [r11+");
+        strconcat(&arr_body, tmp3);
+        strconcat(&arr_body, "], rax\n");
+        free(tmp3);
+    }
     free(tmp);
+    free(tmp2);
     return arr_body;
 }
 char* x86_64_String(lqdStringNode* node, lqdCompilerContext* ctx) {
     char* str_body = malloc(1);
     str_body[0] = 0;
-    lqdCompilerContext* top_lvl_ctx = ctx;
-    while (top_lvl_ctx -> is_child_ctx)top_lvl_ctx = top_lvl_ctx -> parent_ctx;
-    char* tmp = malloc(21);
-    sprintf(tmp, "%li", ++top_lvl_ctx -> defined_arrays);
-    char* tmp5 = malloc(21);
-    sprintf(tmp5, "%li", strlen(node -> tok.value));
-    strconcat(get_glob_section_bss(ctx), "    str");
-    strconcat(get_glob_section_bss(ctx), tmp);
-    strconcat(get_glob_section_bss(ctx), ":");
-    strconcat(get_glob_section_bss(ctx), "\n        str");
-    strconcat(get_glob_section_bss(ctx), tmp);
-    strconcat(get_glob_section_bss(ctx), "values: resq 1\n");
-    strconcat(get_glob_section_bss(ctx), "        str");
-    strconcat(get_glob_section_bss(ctx), tmp);
-    strconcat(get_glob_section_bss(ctx), "size: resq 1\n");
-    strconcat(get_glob_section_bss(ctx), "        str");
-    strconcat(get_glob_section_bss(ctx), tmp);
-    strconcat(get_glob_section_bss(ctx), "elements: resb ");
-    char* tmp2 = malloc(21);
-    sprintf(tmp2, "%li", strlen(node -> tok.value));
-    strconcat(get_glob_section_bss(ctx), tmp2);
-    strconcat(get_glob_section_bss(ctx), "\n");
-    for (uint64_t i = 0; i < strlen(node -> tok.value); i++) {
-        strconcat(&str_body, "    mov rax, ");
-        char* tmp6 = malloc(12);
-        sprintf(tmp6, "%d", node -> tok.value[i]);
-        strconcat(&str_body, tmp6);
-        strconcat(&str_body, "\n");
-        free(tmp6);
-        strconcat(&str_body, "    mov [str");
-        strconcat(&str_body, tmp);
-        strconcat(&str_body, "elements+");
-        char* tmp4 = malloc(20);
-        tmp4[0] = 0;
-        sprintf(tmp4, "%ld", i);
-        strconcat(&str_body, tmp4);
-        free(tmp4);
-        strconcat(&str_body, "], rax\n");
-    }
-    strconcat(&str_body, "    mov rax, ");
+    strconcat(&str_body, "    push qword [next_free]\n");
+    strconcat(&str_body, "    lea r11, [heap]\n");
+    strconcat(&str_body, "    add r11, [next_free]\n");
+    strconcat(&str_body, "    add qword [next_free], 16\n");
+    char* tmp = malloc(20);
+    sprintf(tmp, "%ld", strlen(node -> tok.value));
+    strconcat(&str_body, "    add qword [next_free], ");
+    strconcat(&str_body, tmp);
+    strconcat(&str_body, "\n");
+    strconcat(&str_body, "    mov qword [r11], ");
+    strconcat(&str_body, tmp);
+    strconcat(&str_body, "\n");
+    char* tmp2 = malloc(20);
+    sprintf(tmp2, "%ld", strlen(node -> tok.value));
+    strconcat(&str_body, "    mov qword [r11+8], ");
     strconcat(&str_body, tmp2);
     strconcat(&str_body, "\n");
-    strconcat(&str_body, "    mov [str");
-    strconcat(&str_body, tmp);
-    strconcat(&str_body, "size], rax\n");
-    strconcat(&str_body, "    mov rax, ");
-    strconcat(&str_body, tmp5);
-    strconcat(&str_body, "\n");
-    strconcat(&str_body, "    mov [str");
-    strconcat(&str_body, tmp);
-    strconcat(&str_body, "values], rax\n");
-    strconcat(&str_body, "    push str");
-    strconcat(&str_body, tmp);
-    strconcat(&str_body, "\n");
-    free(tmp2);
-    free(tmp5);
+    for (int i = 0; i < strlen(node -> tok.value); i++) {
+        char* tmp3 = malloc(20);
+        sprintf(tmp3, "%i", i + 16);
+        strconcat(&str_body, "    mov byte [r11+");
+        strconcat(&str_body, tmp3);
+        char* tmp4 = malloc(12);
+        sprintf(tmp4, "%i", node -> tok.value[i]);
+        strconcat(&str_body, "], ");
+        strconcat(&str_body, tmp4);
+        strconcat(&str_body, "\n");
+        free(tmp3);
+        free(tmp4);
+    }
     free(tmp);
+    free(tmp2);
     return str_body;
 };
 char* x86_64_VarAccess(lqdVarAccessNode* node, lqdCompilerContext* ctx) {
@@ -576,30 +525,23 @@ char* x86_64_VarAccess(lqdVarAccessNode* node, lqdCompilerContext* ctx) {
         lqdCompilerError(ctx, node -> path -> tokens[0].line, node -> path -> tokens[0].idx_start, node -> path -> tokens[node -> path -> values-1].idx_end, "Undefined variable!");
     char* var_access = malloc(1);
     var_access[0] = 0;
-    strconcat(&var_access, "    mov rax, [");
-    strconcat(&var_access, node -> path -> tokens[0].value);
+    strconcat(&var_access, "    mov rax, [rbp-");
     char* tmp = malloc(20);
-    sprintf(tmp, "%ld", var.id);
+    sprintf(tmp, "%ld", (var.stack_pos + 1) * 8);
     strconcat(&var_access, tmp);
     strconcat(&var_access, "]\n    push rax\n");
-    free(tmp);
     if (node -> has_slice) {
-        if (!var.is_arr)
-            lqdCompilerError(ctx, node -> path -> tokens[0].line, node -> path -> tokens[0].idx_start, node -> path -> tokens[node -> path -> values - 1].idx_end, "Tried to index a non-array variable!");
-        strconcat(&var_access, "    pop rsi\n");
-        char* tmp = x86_64_compile_stmnt(node -> slice, ctx);
-        strconcat(&var_access, tmp);
+        strconcat(&var_access, "    pop rdx\n");
+        if (strcmp(var.type, "arr") && strcmp(var.type, "str"))
+            lqdCompilerError(ctx, node -> path -> tokens[0].line, node -> path -> tokens[0].idx_start, node -> path -> tokens[node -> path -> values-1].idx_end, "Attempted indexing on non-array");
+        char* tmp2 = x86_64_compile_stmnt(node -> slice, ctx);
+        strconcat(&var_access, tmp2);
         strconcat(&var_access, "    pop rax\n");
-        strconcat(&var_access, "    xor rdx, rdx\n");
-        if (strcmp("str", var.type))
-            strconcat(&var_access, "    mov rcx, 8\n");
-        else
-            strconcat(&var_access, "    mov rcx, 1\n");
-        strconcat(&var_access, "    imul rcx\n");
-        strconcat(&var_access, "    mov rbx, [rsi+16+rax]\n");
+        strconcat(&var_access, "    mov rbx, [heap+rdx+16+rax]\n");
         strconcat(&var_access, "    push rbx\n");
-        free(tmp);
+        free(tmp2);
     }
+    free(tmp);
     return var_access;
 };
 
@@ -761,20 +703,12 @@ char* x86_64_VarDecl(lqdVarDeclNode* node, lqdCompilerContext* ctx, char* namesp
     } else {
         strconcat(&var_body, "    add rsp, 8\n");
     }
-    strconcat(get_glob_section_bss(ctx), "    ");
-    strconcat(get_glob_section_bss(ctx), node -> name.value);
-    char* tmp = malloc(4);
-    sprintf(tmp, "%i", ctx -> id);
-    strconcat(get_glob_section_bss(ctx), tmp);
-    strconcat(get_glob_section_bss(ctx), ": resq 1\n"); // Reserve 8 bytes, TODO: replace to match variable type
-    strconcat(&var_body, "    pop rax\n");
-    strconcat(&var_body, "    mov [");
-    strconcat(&var_body, node -> name.value);
-    strconcat(&var_body, tmp);
-    free(tmp);
-    strconcat(&var_body, "], rax\n");
+
+    // Without this, the code just segfaults so yeh
+    if (!strcmp(node -> type.type.value, "arr") && !node -> has_element_type)
+        lqdCompilerError(ctx, node -> type.type.line, node -> type.type.idx_start, node -> type.type.idx_end, "Expected arr:T where T is a type");
     
-    lqdVariable* var = lqdVariable_new(node -> name.value, node -> type.type.value, node -> initialized, ctx -> id);
+    lqdVariable* var = lqdVariable_new(node -> name.value, node -> type.type.value, node -> initialized, ctx -> id, ctx -> namespace -> vars -> values);
     
     if (!strcmp(node -> type.type.value, "str")) {
         var -> is_arr = 1;
@@ -827,23 +761,15 @@ char* x86_64_FuncDecl(lqdFuncDeclNode* node, lqdCompilerContext* ctx, char* name
             strcpy(child_ctx -> lib_name, ctx -> lib_name);
         }
         for (uint64_t i = 0; i < node -> params -> values; i++) {
-            strconcat(get_glob_section_bss(ctx), "    ");
-            strconcat(get_glob_section_bss(ctx), node -> params -> params[i].name.value);
-            strconcat(get_glob_section_bss(ctx), id_as_str);
-            strconcat(get_glob_section_bss(ctx), ": resq 1\n");
-
             char* tmp = malloc(8);
             sprintf(tmp, "%li", (i + 2) * 8);
             strconcat(&func_body, "    mov rax, [rbp+");
             strconcat(&func_body, tmp);
             strconcat(&func_body, "]\n");
             free(tmp);
-            strconcat(&func_body, "    mov [");
-            strconcat(&func_body, node -> params -> params[i].name.value);
-            strconcat(&func_body, id_as_str);
-            strconcat(&func_body, "], rax\n");
+            strconcat(&func_body, "    push rax\n");
 
-            lqdVariable* var = lqdVariable_new(node -> params -> params[i].name.value, node -> params -> params[i].type.type.value, 1, id);
+            lqdVariable* var = lqdVariable_new(node -> params -> params[i].name.value, node -> params -> params[i].type.type.value, 1, id, child_ctx -> namespace -> vars -> values);
 
             if (!strcmp(node -> params -> params[i].type.type.value, "str") || !strcmp(node -> params -> params[i].type.type.value, "arr")) {
                 var -> is_arr = 1;
@@ -991,22 +917,18 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
     sprintf(tmp, "%li", cc -> comparison++);
     char* tmp2 = malloc(20);
     sprintf(tmp2, "%i", ctx -> id + 1);
-    strconcat(get_glob_section_bss(ctx), "    ");
-    strconcat(get_glob_section_bss(ctx), node -> iterator.value);
-    strconcat(get_glob_section_bss(ctx), tmp2);
-    strconcat(get_glob_section_bss(ctx), ": resq 1\n");
-    strconcat(&for_body, "    mov rax, [");
+    strconcat(&for_body, "    mov rax, [rbp-");
     lqdVariable var = is_defined(ctx, node -> arr -> tokens[0].value);
     if (var.name == NULL)
         lqdCompilerError(ctx, node -> arr -> tokens[0].line, node -> arr -> tokens[0].idx_start, node -> arr -> tokens[0].idx_end, "Array not defined!");
     char* tmp3 = malloc(12);
-    sprintf(tmp3, "%i", ctx -> id);
-    strconcat(&for_body, node -> arr -> tokens[0].value);
+    sprintf(tmp3, "%i", ctx -> namespace -> vars -> values * 8);
     strconcat(&for_body, tmp3);
     free(tmp3);
     strconcat(&for_body, "]\n");
-    strconcat(&for_body, "    mov r8, [rax]\n");
-    strconcat(&for_body, "    lea r9, [rax+16]\n");
+    strconcat(&for_body, "    push 0\n"); // iterator
+    strconcat(&for_body, "    mov r8, [heap+rax+8]\n");
+    strconcat(&for_body, "    lea r9, [heap+rax+16]\n");
     strconcat(&for_body, "    cmp r8, 0\n");
     strconcat(&for_body, "    je .for_");
     strconcat(&for_body, tmp);
@@ -1021,10 +943,23 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
         strconcat(&for_body, tmp);
         strconcat(&for_body, "_true_end\n");
     }
-    strconcat(&for_body, "    mov [");
-    strconcat(&for_body, node -> iterator.value);
-    strconcat(&for_body, tmp2);
+    lqdCompilerContext* child_ctx = create_context(ctx -> code, ctx -> filename, 1, ++cc -> child_contexts);
+    child_ctx -> is_lib = ctx -> is_lib;
+    child_ctx -> lib_name = ctx -> lib_name;
+    child_ctx -> for_end = malloc(100);
+    sprintf(child_ctx -> for_end, ".for_%li_end", ctx -> comparison - 1);
+    child_ctx -> true_for_end = malloc(100);
+    sprintf(child_ctx -> true_for_end, ".for_%li_true_end", ctx -> comparison - 1);
+
+    lqdVariable* _var = lqdVariable_new(node -> iterator.value, var.element_type, 1, child_ctx -> id, child_ctx -> namespace -> vars -> values);
+    lqdVariableArr_push(child_ctx -> namespace -> vars, *_var);
+    strconcat(&for_body, "    mov [rbp-");
+    char* offset = malloc(20);
+    sprintf(offset, "%ld", (_var -> stack_pos + 1) * 8);
+    strconcat(&for_body, offset);
+    free(offset);
     free(tmp2);
+    free(_var);
     strconcat(&for_body, "], r10\n");
     lqdStatementsNode* stmnts = lqdStatementsNode_new(1);
     lqdStatementsNode_push(stmnts, node -> body);
@@ -1032,20 +967,9 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
     if (node -> body.type == NT_Statements) {
         lqdCompilerContext* cc = ctx;
         while (cc -> is_child_ctx) cc = cc -> parent_ctx;
-        lqdCompilerContext* child_ctx = create_context(ctx -> code, ctx -> filename, 1, ++cc -> child_contexts);
-        child_ctx -> is_lib = ctx -> is_lib;
-        child_ctx -> lib_name = ctx -> lib_name;
-        child_ctx -> for_end = malloc(100);
-        sprintf(child_ctx -> for_end, ".for_%li_end", ctx -> comparison - 1);
-        child_ctx -> true_for_end = malloc(100);
-        sprintf(child_ctx -> true_for_end, ".for_%li_true_end", ctx -> comparison - 1);
-
         if (!var.is_arr)
             lqdCompilerError(ctx, node -> arr -> tokens[0].line, node -> arr -> tokens[0].idx_start, node -> arr -> tokens[0].idx_end, "Expected array or string!");
 
-        lqdVariable* _var = lqdVariable_new(node -> iterator.value, var.element_type, 1, child_ctx -> id);
-        lqdVariableArr_push(child_ctx -> namespace -> vars, *_var);
-        free(_var);
         child_ctx -> parent_ctx = ctx;
         code = x86_64_compile_statements(stmnts, child_ctx, NULL);
         free(child_ctx -> for_end);
@@ -1056,7 +980,7 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
         child_ctx -> lib_name = NULL;
         delete_context(child_ctx);
     } else {
-        code = x86_64_compile_statements(stmnts, ctx, NULL);
+        code = x86_64_compile_statements(stmnts, child_ctx, NULL);
     }
     free(stmnts -> statements);
     free(stmnts);
@@ -1132,13 +1056,12 @@ char* x86_64_VarReassign(lqdVarReassignNode* node, lqdCompilerContext* ctx) {
     strconcat(&var_reassign, tmp2);
     free(tmp2);
     strconcat(&var_reassign, "    pop rdi\n");
-    strconcat(&var_reassign, "    mov rbx, ");
+    strconcat(&var_reassign, "    mov rbx, [rbp-");
     char* tmp = malloc(12);
-    sprintf(tmp, "%li", var.id);
-    strconcat(&var_reassign, node -> var -> tokens[0].value);
+    sprintf(tmp, "%li", var.stack_pos * 8);
     strconcat(&var_reassign, tmp);
     free(tmp);
-    strconcat(&var_reassign, "\n");
+    strconcat(&var_reassign, "]\n");
     if (node -> has_slice) {
         strconcat(&var_reassign, "    mov rsi, [rbx]\n");
         char* tmp = x86_64_compile_stmnt(node -> slice, ctx);
@@ -1269,6 +1192,10 @@ char* x86_64_Employ(lqdEmployNode* node, lqdCompilerContext* ctx) {
     free(nctx -> lib_name);
     free(nctx -> namespace -> funcs -> funcs);
     free(nctx -> namespace -> funcs);
+    for (int i = 0; i < nctx -> namespace -> libs -> values; i++) {
+        delete_namespace(nctx -> namespace -> libs -> libs[i] -> namespace);
+        free(nctx -> namespace -> libs -> libs[i]);
+    }
     free(nctx -> namespace -> libs -> libs);
     free(nctx -> namespace -> libs);
     free(nctx -> namespace -> vars -> vars);
@@ -1437,23 +1364,22 @@ char* x86_64_compile(lqdStatementsNode* statements, char* code, char* filename) 
 
     char* final_code = malloc(1);
     final_code[0] = 0;
-    char* section_data = malloc(1);
-    section_data[0] = 0;
     char* section_bss = malloc(1);
     section_bss[0] = 0;
-    strconcat(&section_data, "section .data\n");
-    strconcat(&section_data, ctx -> section_data);
-    strconcat(&final_code, section_data);
     strconcat(&section_bss, "section .bss\n");
-    strconcat(&section_bss, ctx -> section_bss);
+    strconcat(&section_bss, "    heap: resb 660000\n"); // reserve 660KB ram
+    strconcat(&section_bss, "    next_free: resq 1\n");
     strconcat(&final_code, section_bss);
     strconcat(&final_code, "section .text\n");
 #ifdef __WIN64
     strconcat(&final_code, "global WinMain\n");
     strconcat(&final_code, "WinMain:\n");
+    strconcat(&final_code, "    mov qword [next_free], 0\n");
+    strconcat(&final_code, "    call main\n");
 #else
     strconcat(&final_code, "global _start\n");
     strconcat(&final_code, "_start:\n");
+    strconcat(&final_code, "    mov qword [next_free], 0\n");
     strconcat(&final_code, "    call main\n");
     strconcat(&final_code, "    mov rax, 60\n");
     strconcat(&final_code, "    mov rdi, 0\n");
@@ -1466,7 +1392,6 @@ char* x86_64_compile(lqdStatementsNode* statements, char* code, char* filename) 
     lqdTokenArray_delete(ctx -> toks);
     delete_context(ctx);
     free(section_text);
-    free(section_data);
     free(section_bss);
 
     return final_code;

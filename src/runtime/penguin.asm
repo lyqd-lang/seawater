@@ -2,7 +2,6 @@ section .bss
     tmp_str: resb 1
     tmp_inp: resb 1024
 
-; fn __x86_64_clyqd_fputc(num fd, chr byte);
 section .text
 global __x86_64_clyqd_fputc
 __x86_64_clyqd_fputc:

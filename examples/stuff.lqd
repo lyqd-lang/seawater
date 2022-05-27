@@ -1,6 +1,6 @@
-employ std.io -> stdio;
+employ std.io;
 
 fn main() {
-    str test = "abc\0def";
-    stdio.println(test);
+    str test = "hello";
+    io.println(test);
 }

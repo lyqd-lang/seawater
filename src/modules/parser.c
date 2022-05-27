@@ -354,16 +354,18 @@ lqdASTNode statement(lqdParserCtx* ctx) {
         if (has_slice)
             lqdASTNode_delete(slice);
         lqdType var_type = type(ctx);
-        if (ctx -> tok.type != TT_IDEN)
-            lqdSyntaxError(ctx, "Expected identifier!");
         lqdToken element_type;
+        char has_element_type = 0;
         if (ctx -> tok.type == TT_COLON) {
+            has_element_type = 1;
             advance(ctx);
             if (ctx -> tok.type != TT_IDEN)
                 lqdSyntaxError(ctx, "Expected identifier!");
             element_type = ctx -> tok;
             advance(ctx);
         }
+        if (ctx -> tok.type != TT_IDEN)
+            lqdSyntaxError(ctx, "Expected identifier!");
         lqdToken var_name = ctx -> tok;
         advance(ctx);
         if (ctx -> tok.type != TT_SEMICOLON && ctx -> tok.type != TT_EQ)
@@ -388,6 +390,7 @@ lqdASTNode statement(lqdParserCtx* ctx) {
             var_decl -> initialized = 1;
             var_decl -> initializer = value;
             var_decl -> element_type = element_type;
+            var_decl -> has_element_type = has_element_type;
             lqdASTNode node = {NT_VarDecl, var_decl};
             return node;
         }

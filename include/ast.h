@@ -91,6 +91,7 @@ typedef struct {
     lqdToken name;
     lqdASTNode initializer;
     char initialized;
+    char has_element_type;
     lqdToken element_type;
 } lqdVarDeclNode;
 
