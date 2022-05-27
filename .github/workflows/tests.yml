@@ -9,11 +9,12 @@ on:
 jobs:
   build-linux:
     runs-on: ubuntu-latest
-    - name: checkout the code
-      uses: actions/checkout@v3
-    - name: install dependencies
-      run: sudo apt-get -y install base-devel python3 
-    - name: compile the compiler
-      run: python3 build.py
-    - name: run tests
-      run: python3 test.py
+    steps:
+      - name: checkout the code
+        uses: actions/checkout@v3
+      - name: install dependencies
+        run: sudo apt-get -y install build-essential python3 nasm
+      - name: compile the compiler
+        run: python3 build.py
+      - name: run tests
+        run: python3 test.py
