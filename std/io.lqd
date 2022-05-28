@@ -44,3 +44,12 @@ fn putn(num number) {
         i = i - 1;
     }
 }
+
+fn putarr(arr:num array) {
+    for i in array {
+        putn(i);
+        putc(44);
+        putc(32);
+    }
+    putc(10);
+}

@@ -72,6 +72,7 @@ typedef struct {
     lqdParameterArray* params;
     char is_extern;
     char is_void;
+    char exists; // Prevent segfaults at comparisons
 } lqdFunction;
 
 typedef struct {
@@ -91,6 +92,7 @@ lqdFunction* lqdFunction_new(char* name, char* ret_type, lqdParameterArray* para
     func -> is_void = is_void;
     func -> params = params;
     func -> is_extern = is_extern;
+    func -> exists = 1;
     return func;
 }
 
@@ -229,6 +231,34 @@ lqdCompilerContext* create_context(char* code, char* filename, char is_child, ui
     return ctx;
 }
 
+void lqdCompilerError(lqdCompilerContext* ctx, uint64_t line, uint64_t idx_start, uint64_t idx_end, char* message) {
+    fprintf(stderr, "╭────────────────────[ Compiler Error ]────→\n");
+    fprintf(stderr, "│ %s\n", message);
+    fprintf(stderr, "│\n");
+    fprintf(stderr, "│ ");
+    int idx = 0;
+    int i = 0;
+    for (i = 0; i < idx_start; i++)
+        if (ctx -> code[i] == '\n') idx = i;
+    i = line == 1 ? 0 : 1;
+    while (ctx -> code[idx + i] && ctx -> code[idx + i] != '\n') {
+        fprintf(stderr, "%c", ctx -> code[idx + i]);
+        i++;
+    }
+    fprintf(stderr, "\n");
+    fprintf(stderr, "│ ");
+    for (i = line == 1 ? -1 : 0; i < (int)(idx_start - idx); i++)
+        fprintf(stderr, " ");
+    fprintf(stderr, "^");
+    for (i = 0; i < idx_end - idx_start; i++)
+        fprintf(stderr, "~");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "│\n");
+    fprintf(stderr, "│ Line: %ld, File: %s (%s:%ld:%ld)\n", line, ctx -> filename, ctx -> filename, line, idx_start - idx + 1);
+    fprintf(stderr, "╯\n");
+    exit(1);
+}
+
 lqdVariable is_defined(lqdCompilerContext* ctx, char* name) {
     char exists = 0;
     lqdVariable var = {NULL, NULL, 0};
@@ -251,14 +281,16 @@ lqdVariable is_defined(lqdCompilerContext* ctx, char* name) {
 
 lqdFunction is_defined_func(lqdCompilerContext* ctx, lqdTokenArray* path) {
     if (path -> values == 1) {
-        lqdFunction func = {};
+        lqdFunction func;
         lqdCompilerContext* current_ctx = ctx;
         char searching = 1;
+        char found = 0;
         while (searching) {
             for (int i = 0; i < current_ctx -> namespace -> funcs -> values; i++) {
                 if (!strcmp(current_ctx -> namespace -> funcs -> funcs[i] -> name, path -> tokens[0].value)) {
                     searching = 0;
                     func = *current_ctx -> namespace -> funcs -> funcs[i];
+                    found = 1;
                 }
             }
             if (searching) {
@@ -268,9 +300,12 @@ lqdFunction is_defined_func(lqdCompilerContext* ctx, lqdTokenArray* path) {
                 searching = 0;
             }
         }
+        if (!found)
+            lqdCompilerError(ctx, path -> tokens[0].line, path -> tokens[0].idx_start, path -> tokens[0].idx_end, "Undefined function!");
         return func;
     }
-    lqdFunction func = {NULL, NULL, NULL, 0};
+    lqdFunction func;
+    func.exists = 0;
     lqdCompilerContext* current_ctx = ctx;
     lqdNamespace* currentns = current_ctx -> namespace;
     char found = 0;
@@ -290,7 +325,8 @@ lqdFunction is_defined_func(lqdCompilerContext* ctx, lqdTokenArray* path) {
             searching = 0;
         }
     }
-    if (!found) return func;
+    if (!found)
+        lqdCompilerError(ctx, path -> tokens[0].line, path -> tokens[0].idx_start, path -> tokens[0].idx_end, "Undefined function!");
     found = 0;
     for (int i = 1; i < path -> values - 1; i++) {
         for (int j = 0; j < current_ctx -> namespace -> libs -> values; j++) {
@@ -303,12 +339,17 @@ lqdFunction is_defined_func(lqdCompilerContext* ctx, lqdTokenArray* path) {
             break;
         }
     }
-    if (path -> values - 2 && !found) return func;
+    if (path -> values - 2 && !found)
+        lqdCompilerError(ctx, path -> tokens[0].line, path -> tokens[0].idx_start, path -> tokens[0].idx_end, "Undefined function!");
+    found = 0;
     for (int i = 0; i < currentns -> funcs -> values; i++) {
         if (!strcmp(currentns -> funcs -> funcs[i] -> name, path -> tokens[path -> values - 1].value)) {
+            found = 1;
             func = *currentns -> funcs -> funcs[i];
         }
     }
+    if (!found)
+        lqdCompilerError(ctx, path -> tokens[0].line, path -> tokens[0].idx_start, path -> tokens[0].idx_end, "Undefined function!");
     return func;
 }
 
@@ -347,34 +388,6 @@ void delete_context(lqdCompilerContext* ctx) {
     free(ctx -> section_bss);
     free(ctx -> section_data);
     free(ctx);
-}
-
-void lqdCompilerError(lqdCompilerContext* ctx, uint64_t line, int idx_start, int idx_end, char* message) {
-    fprintf(stderr, "╭────────────────────[ Compiler Error ]────→\n");
-    fprintf(stderr, "│ %s\n", message);
-    fprintf(stderr, "│\n");
-    fprintf(stderr, "│ ");
-    int idx = 0;
-    int i = 0;
-    for (i = 0; i < idx_start; i++)
-        if (ctx -> code[i] == '\n') idx = i;
-    i = line == 1 ? 0 : 1;
-    while (ctx -> code[idx + i] && ctx -> code[idx + i] != '\n') {
-        fprintf(stderr, "%c", ctx -> code[idx + i]);
-        i++;
-    }
-    fprintf(stderr, "\n");
-    fprintf(stderr, "│ ");
-    for (i = line == 1 ? -1 : 0; i < (int)(idx_start - idx); i++)
-        fprintf(stderr, " ");
-    fprintf(stderr, "^");
-    for (i = 0; i < idx_end - idx_start; i++)
-        fprintf(stderr, "~");
-    fprintf(stderr, "\n");
-    fprintf(stderr, "│\n");
-    fprintf(stderr, "│ Line: %ld, File: %s (%s:%ld:%i)\n", line, ctx -> filename, ctx -> filename, line, idx_start - idx + 1);
-    fprintf(stderr, "╯\n");
-    exit(1);
 }
 
 void strconcat(char** dst, char* src) {
@@ -462,7 +475,7 @@ char* x86_64_Array(lqdArrayNode* node, lqdCompilerContext* ctx) {
     strconcat(&arr_body, tmp);
     strconcat(&arr_body, "\n");
     char* tmp2 = malloc(20);
-    sprintf(tmp2, "%ld", node -> values -> values * 8);
+    sprintf(tmp2, "%ld", node -> values -> values);
     strconcat(&arr_body, "    mov qword [r11+8], ");
     strconcat(&arr_body, tmp2);
     strconcat(&arr_body, "\n");
@@ -531,16 +544,20 @@ char* x86_64_VarAccess(lqdVarAccessNode* node, lqdCompilerContext* ctx) {
     strconcat(&var_access, tmp);
     strconcat(&var_access, "]\n    push rax\n");
     if (node -> has_slice) {
-        strconcat(&var_access, "    pop rdx\n");
+        strconcat(&var_access, "    pop rdi\n");
         if (strcmp(var.type, "arr") && strcmp(var.type, "str"))
             lqdCompilerError(ctx, node -> path -> tokens[0].line, node -> path -> tokens[0].idx_start, node -> path -> tokens[node -> path -> values-1].idx_end, "Attempted indexing on non-array");
         char* tmp2 = x86_64_compile_stmnt(node -> slice, ctx);
         strconcat(&var_access, tmp2);
         strconcat(&var_access, "    pop rax\n");
         if (!strcmp(var.type, "str"))
-            strconcat(&var_access, "    mov rbx, [heap+rdx+16+rax]\n");
-        else
-            strconcat(&var_access, "    mov rbx, qword [heap+rdx+16+rax]\n");
+            strconcat(&var_access, "    mov rbx, [heap+rdi+16+rax]\n");
+        else {
+            strconcat(&var_access, "    xor rdx, rdx\n");
+            strconcat(&var_access, "    mov rcx, 8\n");
+            strconcat(&var_access, "    imul rcx\n");
+            strconcat(&var_access, "    mov rbx, qword [heap+rdi+16+rax]\n");
+        }
         strconcat(&var_access, "    push rbx\n");
         free(tmp2);
     }
@@ -600,8 +617,8 @@ char* x86_64_BinOp(lqdBinOpNode* node, lqdCompilerContext* ctx) {
     binop[0] = 0;
     char type_matching = 0;
     type_matching = !strcmp(get_type(ctx, node -> left), get_type(ctx, node -> right));
-    type_matching = type_matching || !strcmp(get_type(ctx, node -> left), "chr") && !strcmp(get_type(ctx, node -> right), "num");
-    type_matching = type_matching || !strcmp(get_type(ctx, node -> left), "num") && !strcmp(get_type(ctx, node -> right), "chr");
+    type_matching = type_matching || (!strcmp(get_type(ctx, node -> left), "chr") && !strcmp(get_type(ctx, node -> right), "num"));
+    type_matching = type_matching || (!strcmp(get_type(ctx, node -> left), "num") && !strcmp(get_type(ctx, node -> right), "chr"));
     if (!type_matching)
         lqdCompilerError(ctx, get_tok(node -> left).line, get_tok(node -> left).idx_start, get_tok(node -> right).idx_end, "Can't perform an operation on different types");
     char* tmp = x86_64_compile_stmnt(node -> left, ctx);
@@ -827,7 +844,7 @@ char* x86_64_Statements(lqdStatementsNode* node, lqdCompilerContext* ctx) {
 char* x86_64_FuncCall(lqdFuncCallNode* node, lqdCompilerContext* ctx) {
     lqdFunction found = is_defined_func(ctx, node -> call_path);
     char is_extern = found.is_extern;
-    if (found.name == NULL)
+    if (!found.exists)
         lqdCompilerError(ctx, node -> call_path -> tokens[0].line, node -> call_path -> tokens[0].idx_start, node -> call_path -> tokens[node -> call_path -> values - 1].idx_end, "Undefined function!");
     char* call_body = malloc(1);
     call_body[0] = 0;
@@ -838,7 +855,7 @@ char* x86_64_FuncCall(lqdFuncCallNode* node, lqdCompilerContext* ctx) {
     for (int i = node -> args -> values - 1; i >= 0; i--) {
         char* type = get_type(ctx, node -> args -> statements[i]);
         char matching_type = 0;
-        matching_type = !strcmp(type, found.params -> params[i].type.type.value);
+        matching_type = !strcmp(found.params -> params[i].type.type.value, type);
         matching_type = matching_type || (!strcmp("chr", found.params -> params[i].type.type.value) && !strcmp("num", type));
         if (!matching_type)
             lqdCompilerError(ctx, node -> call_path -> tokens[0].line, node -> call_path -> tokens[0].idx_start, node -> call_path -> tokens[node -> call_path -> values - 1].idx_end, "Invalid arguments passed!");
@@ -934,7 +951,7 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
     free(tmp3);
     strconcat(&for_body, "]\n");
     strconcat(&for_body, "    push 0\n"); // iterator
-    strconcat(&for_body, "    mov r8, [heap+rax+8]\n");
+    strconcat(&for_body, "    mov r8, qword [heap+rax+8]\n");
     strconcat(&for_body, "    lea r9, [heap+rax+16]\n");
     strconcat(&for_body, "    cmp r8, 0\n");
     strconcat(&for_body, "    je .for_");
@@ -1067,6 +1084,7 @@ char* x86_64_VarReassign(lqdVarReassignNode* node, lqdCompilerContext* ctx) {
     char* tmp = malloc(12);
     sprintf(tmp, "%li", (var.stack_pos + 1) * 8);
     strconcat(&var_reassign, tmp);
+    free(tmp);
     strconcat(&var_reassign, "]\n");
     if (node -> has_slice) {
         strconcat(&var_reassign, "    mov rsi, heap\n");
