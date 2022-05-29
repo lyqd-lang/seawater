@@ -51,13 +51,22 @@ lqdType type(lqdParserCtx* ctx);
 
 
 lqdType type(lqdParserCtx* ctx) {
-    lqdType _type = {lqdToken_new(0,NULL,0,0,0)};
+    lqdType _type = {lqdToken_new(0,NULL,0,0,0), lqdToken_new(0,NULL,0,0,0)};
     if (ctx -> tok.type != TT_IDEN) {
-        lqdSyntaxError(ctx, "Expected a type!");
+        lqdSyntaxError(ctx, "Expected an identifier!");
         return _type;
     }
     _type.type = ctx -> tok;
     advance(ctx);
+    if (ctx -> tok.type == TT_COLON) {
+        advance(ctx);
+        if (ctx -> tok.type != TT_IDEN) {
+            lqdSyntaxError(ctx, "Expected an identifier!");
+        }
+        _type.element_type = ctx -> tok;
+        _type.has_element_type = 1;
+        advance(ctx);
+    }
     return _type;
 }
 
@@ -354,16 +363,6 @@ lqdASTNode statement(lqdParserCtx* ctx) {
         if (has_slice)
             lqdASTNode_delete(slice);
         lqdType var_type = type(ctx);
-        lqdToken element_type;
-        char has_element_type = 0;
-        if (ctx -> tok.type == TT_COLON) {
-            has_element_type = 1;
-            advance(ctx);
-            if (ctx -> tok.type != TT_IDEN)
-                lqdSyntaxError(ctx, "Expected identifier!");
-            element_type = ctx -> tok;
-            advance(ctx);
-        }
         if (ctx -> tok.type != TT_IDEN)
             lqdSyntaxError(ctx, "Expected identifier!");
         lqdToken var_name = ctx -> tok;
@@ -389,8 +388,7 @@ lqdASTNode statement(lqdParserCtx* ctx) {
             var_decl -> name = var_name;
             var_decl -> initialized = 1;
             var_decl -> initializer = value;
-            var_decl -> element_type = element_type;
-            var_decl -> has_element_type = has_element_type;
+            var_decl -> has_element_type = var_type.has_element_type;
             lqdASTNode node = {NT_VarDecl, var_decl};
             return node;
         }

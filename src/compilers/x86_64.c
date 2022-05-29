@@ -14,6 +14,9 @@ typedef struct {
     char is_arr;
     char* element_type;
     uint64_t stack_pos;
+
+    char glob;
+    int overhead;
 } lqdVariable;
 
 typedef struct {
@@ -33,6 +36,8 @@ lqdVariable* lqdVariable_new(char* name, char* type, char initialized, uint64_t 
     var -> element_type = NULL;
     var -> is_arr = 0;
     var -> stack_pos = stack_pos;
+    var -> overhead = 0;
+    var -> glob = 0;
     return var;
 }
 
@@ -175,8 +180,8 @@ typedef struct {
     char* code;
     char* filename;
 
-    char* section_bss;
     char* section_data;
+    char* section_bss;
 
     uint64_t defined_arrays;
 
@@ -195,6 +200,11 @@ typedef struct {
     char* true_while_end;
 
     uint64_t comparison;
+
+    char is_func;
+
+    char is_decl;
+    char* decl_type;
 
     lqdTokenArray* toks;
     lqdStatementsNode* employ_discard;
@@ -215,10 +225,10 @@ lqdCompilerContext* create_context(char* code, char* filename, char is_child, ui
 
     ctx -> local_vars = 0;
 
-    ctx -> section_bss = malloc(1);
-    ctx -> section_bss[0] = 0;
     ctx -> section_data = malloc(1);
     ctx -> section_data[0] = 0;
+    ctx -> section_bss = malloc(1);
+    ctx -> section_bss[0] = 0;
     ctx -> defined_arrays = 0;
 
     ctx -> is_child_ctx = is_child;
@@ -228,6 +238,9 @@ lqdCompilerContext* create_context(char* code, char* filename, char is_child, ui
     ctx -> comparison = 0;
     ctx -> id = id;
     ctx -> child_contexts = 0;
+    
+    ctx -> is_func = 0;
+    ctx -> is_decl = 0; // TODO: Finish this
     return ctx;
 }
 
@@ -259,23 +272,32 @@ void lqdCompilerError(lqdCompilerContext* ctx, uint64_t line, uint64_t idx_start
     exit(1);
 }
 
-lqdVariable is_defined(lqdCompilerContext* ctx, char* name) {
+lqdVariable is_defined(lqdCompilerContext* ctx, lqdToken name) {
     char exists = 0;
-    lqdVariable var = {NULL, NULL, 0};
+    lqdVariable var;
     lqdCompilerContext* current_ctx = ctx;
-    while (current_ctx -> is_child_ctx) {
+    uint64_t overhead = 0;
+    char searching = 1;
+    while (searching) {
         for (uint64_t i = 0; i < current_ctx -> namespace -> vars -> values; i++) {
-            if (!strcmp(current_ctx -> namespace -> vars -> vars[i] -> name, name)) {
-                exists = current_ctx -> id;
+            if (!strcmp(current_ctx -> namespace -> vars -> vars[i] -> name, name.value)) {
+                exists = 1;
                 var = *current_ctx -> namespace -> vars -> vars[i];
             }
         }
         if (!exists) {
-            current_ctx = current_ctx -> parent_ctx;
+            if (current_ctx -> is_func)
+                overhead += 2;
+            overhead += current_ctx -> namespace -> vars -> values; // Gonna need testing ;-;
+            if (current_ctx -> is_child_ctx) current_ctx = current_ctx -> parent_ctx;
+            else searching = 0;
         } else {
-            break;
+            searching = 0;
         }
     }
+    if (!exists)
+        lqdCompilerError(ctx, name.line, name.idx_start, name.idx_end, "Undefined variable!");
+    var.overhead = overhead * 8;
     return var;
 }
 
@@ -385,7 +407,6 @@ void delete_context(lqdCompilerContext* ctx) {
     delete_namespace(ctx -> namespace);
     if (ctx -> is_lib)
         free(ctx -> lib_name);
-    free(ctx -> section_bss);
     free(ctx -> section_data);
     free(ctx);
 }
@@ -393,19 +414,6 @@ void delete_context(lqdCompilerContext* ctx) {
 void strconcat(char** dst, char* src) {
     *dst = realloc(*dst, strlen(*dst) + strlen(src) + 2);
     strcat(*dst, src);
-}
-
-char** get_glob_section_data(lqdCompilerContext* ctx) {
-    lqdCompilerContext* current_ctx = ctx;
-    while (current_ctx -> is_child_ctx)
-        current_ctx = current_ctx -> parent_ctx;
-    return &current_ctx -> section_data;
-}
-char** get_glob_section_bss(lqdCompilerContext* ctx) {
-    lqdCompilerContext* current_ctx = ctx;
-    while (current_ctx -> is_child_ctx)
-        current_ctx = current_ctx -> parent_ctx;
-    return &current_ctx -> section_bss;
 }
 
 char* x86_64_compile_statements(lqdStatementsNode* statements, lqdCompilerContext* ctx, char* namespace);
@@ -459,7 +467,9 @@ char* x86_64_Char(lqdCharNode* node, lqdCompilerContext* ctx) {
 char* x86_64_Array(lqdArrayNode* node, lqdCompilerContext* ctx) {
     char* arr_body = malloc(1);
     arr_body[0] = 0;
-    strconcat(&arr_body, "    push qword [next_free]\n");
+    strconcat(&arr_body, "    mov rax, heap\n");
+    strconcat(&arr_body, "    add rax, [next_free]\n");
+    strconcat(&arr_body, "    push rax\n");
     strconcat(&arr_body, "    lea r11, [heap]\n");
     strconcat(&arr_body, "    add r11, [next_free]\n");
     strconcat(&arr_body, "    add qword [next_free], 16\n");
@@ -498,7 +508,9 @@ char* x86_64_Array(lqdArrayNode* node, lqdCompilerContext* ctx) {
 char* x86_64_String(lqdStringNode* node, lqdCompilerContext* ctx) {
     char* str_body = malloc(1);
     str_body[0] = 0;
-    strconcat(&str_body, "    push qword [next_free]\n");
+    strconcat(&str_body, "    mov rax, heap\n");
+    strconcat(&str_body, "    add rax, [next_free]\n");
+    strconcat(&str_body, "    push rax\n");
     strconcat(&str_body, "    lea r11, [heap]\n");
     strconcat(&str_body, "    add r11, [next_free]\n");
     strconcat(&str_body, "    add qword [next_free], 16\n");
@@ -533,16 +545,26 @@ char* x86_64_String(lqdStringNode* node, lqdCompilerContext* ctx) {
     return str_body;
 };
 char* x86_64_VarAccess(lqdVarAccessNode* node, lqdCompilerContext* ctx) {
-    lqdVariable var = is_defined(ctx, node -> path -> tokens[0].value);
+    lqdVariable var = is_defined(ctx, node -> path -> tokens[0]);
     if (var.name == NULL)
         lqdCompilerError(ctx, node -> path -> tokens[0].line, node -> path -> tokens[0].idx_start, node -> path -> tokens[node -> path -> values-1].idx_end, "Undefined variable!");
     char* var_access = malloc(1);
     var_access[0] = 0;
-    strconcat(&var_access, "    mov rax, [rbp-");
     char* tmp = malloc(20);
-    sprintf(tmp, "%ld", (var.stack_pos + 1) * 8);
-    strconcat(&var_access, tmp);
-    strconcat(&var_access, "]\n    push rax\n");
+    if (!var.glob) {
+        strconcat(&var_access, "    mov rax, [rbp-");
+        sprintf(tmp, "%ld", (var.stack_pos + 1) * 8);
+        strconcat(&var_access, tmp);
+        sprintf(tmp, "%i", var.overhead);
+        strconcat(&var_access, "+");
+        strconcat(&var_access, tmp);
+        strconcat(&var_access, "]\n");
+    } else {
+        strconcat(&var_access, "    mov rax, [");
+        strconcat(&var_access, node -> path -> tokens[0].value);
+        strconcat(&var_access, "]\n");
+    }
+    strconcat(&var_access, "    push rax\n");
     if (node -> has_slice) {
         strconcat(&var_access, "    pop rdi\n");
         if (strcmp(var.type, "arr") && strcmp(var.type, "str"))
@@ -551,12 +573,12 @@ char* x86_64_VarAccess(lqdVarAccessNode* node, lqdCompilerContext* ctx) {
         strconcat(&var_access, tmp2);
         strconcat(&var_access, "    pop rax\n");
         if (!strcmp(var.type, "str"))
-            strconcat(&var_access, "    mov rbx, [heap+rdi+16+rax]\n");
+            strconcat(&var_access, "    mov rbx, [rdi+16+rax]\n");
         else {
             strconcat(&var_access, "    xor rdx, rdx\n");
             strconcat(&var_access, "    mov rcx, 8\n");
             strconcat(&var_access, "    imul rcx\n");
-            strconcat(&var_access, "    mov rbx, qword [heap+rdi+16+rax]\n");
+            strconcat(&var_access, "    mov rbx, qword [rdi+16+rax]\n");
         }
         strconcat(&var_access, "    push rbx\n");
         free(tmp2);
@@ -575,7 +597,7 @@ char* get_type(lqdCompilerContext* ctx, lqdASTNode value) {
     } else if (value.type == NT_Char) {
         return "chr";
     } else if (value.type == NT_VarAccess) {
-        lqdVariable var = is_defined(ctx, ((lqdVarAccessNode*)value.node) -> path -> tokens[0].value);
+        lqdVariable var = is_defined(ctx, ((lqdVarAccessNode*)value.node) -> path -> tokens[0]);
         if (((lqdVarAccessNode*)value.node) -> has_slice && var.is_arr)
             return var.element_type;
         return var.type;
@@ -720,12 +742,20 @@ char* x86_64_Unary(lqdUnaryOpNode* node, lqdCompilerContext* ctx) {
 char* x86_64_VarDecl(lqdVarDeclNode* node, lqdCompilerContext* ctx, char* namespace) {
     char* var_body = malloc(1);
     var_body[0] = 0;
+    lqdCompilerContext* cc = ctx;
+    while (cc -> is_child_ctx) cc = cc -> parent_ctx;
     if (node -> initialized) {
         char* tmp = x86_64_compile_stmnt(node -> initializer, ctx);
         strconcat(&var_body, tmp);
         free(tmp);
     } else {
-        strconcat(&var_body, "    add rsp, 8\n");
+        if (ctx -> is_child_ctx)
+            strconcat(&var_body, "    add rsp, 8\n");
+        else {
+            strconcat(&cc -> section_bss, "    ");
+            strconcat(&cc -> section_bss, node -> name.value);
+            strconcat(&cc -> section_bss, ": resq 1\n");
+        }
     }
 
     // Without this, the code just segfaults so yeh
@@ -740,8 +770,8 @@ char* x86_64_VarDecl(lqdVarDeclNode* node, lqdCompilerContext* ctx, char* namesp
         strcpy(var -> element_type, "chr");
     } else if (!strcmp(node -> type.type.value, "arr")) {
         var -> is_arr = 1;
-        var -> element_type = malloc(strlen(node -> element_type.value)+1);
-        strcpy(var -> element_type, node -> element_type.value);
+        var -> element_type = malloc(strlen(node -> type.element_type.value)+1);
+        strcpy(var -> element_type, node -> type.element_type.value);
     }
 
     lqdVariableArr_push(ctx -> namespace -> vars, *var);
@@ -761,6 +791,16 @@ char* x86_64_FuncDecl(lqdFuncDeclNode* node, lqdCompilerContext* ctx, char* name
         strconcat(&func_body, "\n");
         return func_body;
     }
+    if (node -> statement.type == NT_NoStmnt)
+        return func_body;
+
+    strconcat(&func_body, "global ");
+    if (namespace != NULL) {
+        strconcat(&func_body, namespace);
+        strconcat(&func_body, "_");
+    }
+    strconcat(&func_body, node -> name.value);
+    strconcat(&func_body, "\n");
     if (namespace != NULL) {
         strconcat(&func_body, namespace);
         strconcat(&func_body, "_");
@@ -780,6 +820,7 @@ char* x86_64_FuncDecl(lqdFuncDeclNode* node, lqdCompilerContext* ctx, char* name
     if (node -> statement.type == NT_Statements) {
         lqdCompilerContext* child_ctx = create_context(ctx -> code, ctx -> filename, 1, id);
         child_ctx -> is_lib = ctx -> is_lib;
+        child_ctx -> is_func = 1;
         if (ctx -> is_lib) {
             child_ctx -> lib_name = malloc(strlen(ctx -> lib_name) + 1);
             strcpy(child_ctx -> lib_name, ctx -> lib_name);
@@ -803,8 +844,8 @@ char* x86_64_FuncDecl(lqdFuncDeclNode* node, lqdCompilerContext* ctx, char* name
                     strcpy(var -> element_type, "chr");
                 } else if (!strcmp(node -> params -> params[i].type.type.value, "arr")) {
                     var -> is_arr = 1;
-                    var -> element_type = malloc(strlen(node -> params -> params[i].element_type.value)+1);
-                    strcpy(var -> element_type, node -> params -> params[i].element_type.value);
+                    var -> element_type = malloc(strlen(node -> params -> params[i].type.element_type.value)+1);
+                    strcpy(var -> element_type, node -> params -> params[i].type.element_type.value);
                 }
             }
             lqdVariableArr_push(child_ctx -> namespace -> vars, *var);
@@ -942,7 +983,7 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
     char* tmp2 = malloc(20);
     sprintf(tmp2, "%i", ctx -> id + 1);
     strconcat(&for_body, "    mov rax, [rbp-");
-    lqdVariable var = is_defined(ctx, node -> arr -> tokens[0].value);
+    lqdVariable var = is_defined(ctx, node -> arr -> tokens[0]);
     if (var.name == NULL)
         lqdCompilerError(ctx, node -> arr -> tokens[0].line, node -> arr -> tokens[0].idx_start, node -> arr -> tokens[0].idx_end, "Array not defined!");
     char* tmp3 = malloc(12);
@@ -951,8 +992,8 @@ char* x86_64_For(lqdForNode* node, lqdCompilerContext* ctx) {
     free(tmp3);
     strconcat(&for_body, "]\n");
     strconcat(&for_body, "    push 0\n"); // iterator
-    strconcat(&for_body, "    mov r8, qword [heap+rax+8]\n");
-    strconcat(&for_body, "    lea r9, [heap+rax+16]\n");
+    strconcat(&for_body, "    mov r8, qword [rax+8]\n");
+    strconcat(&for_body, "    lea r9, [rax+16]\n");
     strconcat(&for_body, "    cmp r8, 0\n");
     strconcat(&for_body, "    je .for_");
     strconcat(&for_body, tmp);
@@ -1071,7 +1112,7 @@ char* x86_64_While(lqdWhileNode* node, lqdCompilerContext* ctx) {
     return while_body;
 };
 char* x86_64_VarReassign(lqdVarReassignNode* node, lqdCompilerContext* ctx) {
-    lqdVariable var = is_defined(ctx, node -> var -> tokens[0].value);
+    lqdVariable var = is_defined(ctx, node -> var -> tokens[0]);
     if (var.name == NULL)
         lqdCompilerError(ctx, node -> var -> tokens[0].line, node -> var -> tokens[0].idx_start, node -> var -> tokens[node -> var -> values-1].idx_end, "Undefined variable!");
     char* var_reassign = malloc(1);
@@ -1080,17 +1121,25 @@ char* x86_64_VarReassign(lqdVarReassignNode* node, lqdCompilerContext* ctx) {
     strconcat(&var_reassign, tmp2);
     free(tmp2);
     strconcat(&var_reassign, "    pop rdi\n");
-    strconcat(&var_reassign, "    lea rbx, [rbp-");
-    char* tmp = malloc(12);
-    sprintf(tmp, "%li", (var.stack_pos + 1) * 8);
-    strconcat(&var_reassign, tmp);
-    free(tmp);
-    strconcat(&var_reassign, "]\n");
-    if (node -> has_slice) {
-        strconcat(&var_reassign, "    mov rsi, heap\n");
-        strconcat(&var_reassign, "    add rsi, [rbx]\n");
-        char* tmp = x86_64_compile_stmnt(node -> slice, ctx);
+    if (!var.glob) {
+        strconcat(&var_reassign, "    lea rbx, [rbp-");
+        char* tmp = malloc(12);
+        sprintf(tmp, "%li", (var.stack_pos + 1) * 8);
         strconcat(&var_reassign, tmp);
+        strconcat(&var_reassign, "+");
+        sprintf(tmp, "%i", var.overhead);
+        strconcat(&var_reassign, tmp);
+        free(tmp);
+        strconcat(&var_reassign, "]\n");
+    } else {
+        strconcat(&var_reassign, "    lea rbx, [");
+        strconcat(&var_reassign, node -> var -> tokens[0].value);
+        strconcat(&var_reassign, "]\n");
+    }
+    if (node -> has_slice) {
+        strconcat(&var_reassign, "    mov rsi, [rbx]\n");
+        char* tmp2 = x86_64_compile_stmnt(node -> slice, ctx);
+        strconcat(&var_reassign, tmp2);
         strconcat(&var_reassign, "    pop rax\n");
         if (strcmp("str", var.type)) {
             strconcat(&var_reassign, "    xor rdx, rdx\n");
@@ -1098,7 +1147,7 @@ char* x86_64_VarReassign(lqdVarReassignNode* node, lqdCompilerContext* ctx) {
             strconcat(&var_reassign, "    imul rcx\n");
         }
         strconcat(&var_reassign, "    lea rbx, [rsi+16+rax]\n");    
-        free(tmp);
+        free(tmp2);
     }
     strconcat(&var_reassign, "    mov [rbx], rdi\n");
     return var_reassign;
@@ -1215,7 +1264,6 @@ char* x86_64_Employ(lqdEmployNode* node, lqdCompilerContext* ctx) {
     }
 
     free(nctx -> section_data);
-    free(nctx -> section_bss);
     free(nctx -> lib_name);
     free(nctx -> namespace -> funcs -> funcs);
     free(nctx -> namespace -> funcs);
@@ -1391,27 +1439,12 @@ char* x86_64_compile(lqdStatementsNode* statements, char* code, char* filename) 
 
     char* final_code = malloc(1);
     final_code[0] = 0;
-    char* section_bss = malloc(1);
-    section_bss[0] = 0;
-    strconcat(&section_bss, "section .bss\n");
-    strconcat(&section_bss, "    heap: resb 660000\n"); // reserve 660KB ram
-    strconcat(&section_bss, "    next_free: resq 1\n");
-    strconcat(&final_code, section_bss);
+    strconcat(&final_code, "section .bss\n");
+    strconcat(&final_code, "    heap: resb 660000\n");
+    strconcat(&final_code, "    next_free: resq 1\n");
+    strconcat(&final_code, ctx -> section_bss);
     strconcat(&final_code, "section .text\n");
-#ifdef __WIN64
-    strconcat(&final_code, "global WinMain\n");
-    strconcat(&final_code, "WinMain:\n");
-    strconcat(&final_code, "    mov qword [next_free], 0\n");
-    strconcat(&final_code, "    call main\n");
-#else
     strconcat(&final_code, "global _start\n");
-    strconcat(&final_code, "_start:\n");
-    strconcat(&final_code, "    mov qword [next_free], 0\n");
-    strconcat(&final_code, "    call main\n");
-    strconcat(&final_code, "    mov rax, 60\n");
-    strconcat(&final_code, "    mov rdi, 0\n");
-    strconcat(&final_code, "    syscall\n");
-#endif
     strconcat(&final_code, section_text);
 
     lqdStatementsNode_delete(ctx -> employ_discard);
@@ -1419,7 +1452,6 @@ char* x86_64_compile(lqdStatementsNode* statements, char* code, char* filename) 
     lqdTokenArray_delete(ctx -> toks);
     delete_context(ctx);
     free(section_text);
-    free(section_bss);
 
     return final_code;
 }

@@ -37,6 +37,8 @@ typedef enum {
 
 typedef struct {
     lqdToken type;
+    lqdToken element_type;
+    char has_element_type;
 } lqdType;
 
 typedef struct {
