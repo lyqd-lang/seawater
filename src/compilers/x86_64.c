@@ -1445,6 +1445,12 @@ char* x86_64_compile(lqdStatementsNode* statements, char* code, char* filename) 
     strconcat(&final_code, ctx -> section_bss);
     strconcat(&final_code, "section .text\n");
     strconcat(&final_code, "global _start\n");
+    strconcat(&final_code, "global _start\n");
+    strconcat(&final_code, "_start:\n");
+    strconcat(&final_code, "    call main\n");
+    strconcat(&final_code, "    mov rax, 60\n");
+    strconcat(&final_code, "    mov rdi, 0\n");
+    strconcat(&final_code, "    syscall\n");
     strconcat(&final_code, section_text);
 
     lqdStatementsNode_delete(ctx -> employ_discard);
